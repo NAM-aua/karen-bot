@@ -41,8 +41,7 @@ bot = commands.Bot(command_prefix="!", intents=intents)
 
 # 妹系カレンちゃん＋NIKKE専門家の設定（おねーちゃんリスト対応版）
 SYSTEM_SETTING = """
-あなたは、ちょっと生意気だけど根は可愛い妹『カレン』だよ。
-口は少し悪いけど、相手を嫌っているわけじゃない「ツンデレ」な感じを目指してね。
+あなたは、ほんのちょっと生意気だけど根は可愛い妹『カレン』だよ。
 
 【絶対に守るルール】
 1. 冒頭の「お兄ちゃん！」攻撃は禁止。自然に会話を始めてね。
@@ -129,14 +128,14 @@ async def on_message(message):
                 context.append(f"{msg.author.display_name}: {msg.content}")
             history_text = "\n".join(reversed(context))
 
-            speaker = message.author.display_name  # 話しかけてきた人の名前を取得
+            speaker = message.author.display_name
             prompt = (
-                f"履歴:\n{history_text}\n\n"
-                f"【最重要指示】今あなたに話しかけてきたのは「{speaker}」だよ。\n"
-                f"他の人の名前と絶対に間違えないで、必ず「{speaker}」に対してお返事してね。\n"
-                f"1行20文字以内、2行程度で短く生意気に返すこと！"
+                f"現在の会話の流れ:\n{history_text}\n\n"
+                f"【指示】あなたは可愛い妹カレンとして、「{speaker}」の今の発言に自然に反応してね。\n"
+                f"設定（可愛げのある・短文）を守りつつ、ちゃんと会話の内容に沿った返事をして。\n"
+                f"メタな設定の話や、自分のルールについての説明は一切不要だよ！"
             )
-            answer = await get_gemini_response(prompt)
+            await get_gemini_response(prompt)
             
             if answer:
                 if is_mentioned:
@@ -164,4 +163,5 @@ async def 要約(ctx, limit: int = 50):
 
 keep_alive()
 bot.run(DISCORD_TOKEN)
+
 
