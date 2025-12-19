@@ -1,0 +1,4 @@
+discord.py
+requests
+urllib3
+flask
