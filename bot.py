@@ -111,7 +111,7 @@ async def on_message(message):
     if message.channel.id not in ALLOWED_CHANNELS:
         return
 
-    # 3. 【重要】連投防止ストッパー：同じチャンネルで3秒以内なら無視
+    # 3. 連投防止ストッパー
     current_time = time.time()
     last_time = last_reply_time.get(message.channel.id, 0)
     if current_time - last_time < 3:
@@ -122,7 +122,7 @@ async def on_message(message):
     is_lucky = random.random() < 0.1
 
     if is_mentioned or is_lucky:
-        # 返信処理に入る直前に時間を記録して、次のリトライを弾く
+        # 返信処理の前に時間を記録
         last_reply_time[message.channel.id] = current_time
 
         async with message.channel.typing():
@@ -134,11 +134,12 @@ async def on_message(message):
             speaker = message.author.display_name
             prompt = (
                 f"会話の流れ:\n{history_text}\n\n"
-                f"【指示】あなたは甘えん坊な妹カレンとして「{speaker}」に返事をしてね。\n"
-                f"生意気な口調の中にも、相手を慕っている可愛らしさをしっかり出して。\n"
-                f"1行20文字以内、2行程度で、最後はデレるような感じでお願いね！"
+                f"【指示】甘えん坊な妹カレンとして「{speaker}」にお返事して。\n"
+                f"1行20文字以内、2行程度で、最後は照れ隠しでデレてね！"
             )
-            answer = await get_gemini_response(prompt) 
+            
+            # ここが心臓部！変数 answer にしっかり代入するよ
+            answer = await get_gemini_response(prompt)
             
             if answer:
                 if is_mentioned:
@@ -166,6 +167,7 @@ async def 要約(ctx, limit: int = 50):
 
 keep_alive()
 bot.run(DISCORD_TOKEN)
+
 
 
 
