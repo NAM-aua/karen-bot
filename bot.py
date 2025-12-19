@@ -28,7 +28,7 @@ urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 DISCORD_TOKEN = os.getenv('DISCORD_TOKEN')
 GEMINI_API_KEY = os.getenv('GEMINI_API_KEY')
-ALLOWED_CHANNELS = [1255505687807524928, 1251376400775254149]
+ALLOWED_CHANNELS = [1255505687807524928, 1251376400775254149, 1268434232028430348]
 
 # モデルの優先順位（最新の gemini-3-flash を最初にしたよ！）
 MODEL_CANDIDATES = ["gemini-3-flash", "gemini-2.5-flash", "gemini-2.5-flash-lite"]
@@ -73,37 +73,37 @@ async def on_ready():
 
 @bot.event
 async def on_message(message):
+    # 許可されていないチャンネルやBot自身の発言は無視
     if message.author == bot.user or message.channel.id not in ALLOWED_CHANNELS:
         return
 
-    if bot.user.mentioned_in(message):
-        async with message.channel.typing():
-            context = []
-            async for msg in message.channel.history(limit=5):
-                context.append(f"{msg.author.display_name}: {msg.content}")
-            history_text = "\n".join(reversed(context))
+    # ★ここで1回だけ履歴を取得して、変数 history_text に入れる
+    context = []
+    async for msg in message.channel.history(limit=5):
+        context.append(f"{msg.author.display_name}: {msg.content}")
+    history_text = "\n".join(reversed(context))
 
+    # --- 1. メンションされた時の反応 ---
+    # 新しいチャンネル（1268434232028430348）以外で反応するよ
+    if bot.user.mentioned_in(message) and message.channel.id != 1268434232028430348:
+        async with message.channel.typing():
+            # さっき取得した history_text をそのまま使う！
             prompt = f"これまでの流れ:\n{history_text}\n\n妹として可愛く、NIKKEの話題なら専門的に3行以内で返事して！"
             answer = await get_gemini_response(prompt)
             if answer:
                 await message.reply(answer)
         return
 
+    # --- 2. 10%の確率でランダム割り込み ---
     if random.random() < 0.1:
         async with message.channel.typing():
-            # 割り込みでも直近3件の履歴を取得するように変更！
-            context = []
-            async for msg in message.channel.history(limit=5):
-                context.append(f"{msg.author.display_name}: {msg.content}")
-            history_text = "\n".join(reversed(context))
-
-            # 履歴を踏まえた割り込みプロンプト
-            prompt = f"これまでの会話の流れ:\n{history_text}\n\nこの流れに対して、妹のカレンとして1行で可愛く割り込んで！NIKKEの話題なら知識を披露してね！"
+            # ここでもさっきの history_text を使い回す！
+            prompt = f"会話の流れ:\n{history_text}\n\nこの流れに妹のカレンとして1行で可愛く割り込んで！NIKKEの話題なら知識を披露して！"
             answer = await get_gemini_response(prompt)
             if answer:
                 await message.channel.send(answer)
         return
-
+        
     await bot.process_commands(message)
 
 @bot.command()
@@ -126,5 +126,6 @@ async def 要約(ctx, limit: int = 50):
 keep_alive()
 # 2. Botを起動
 bot.run(DISCORD_TOKEN)
+
 
 
