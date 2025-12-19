@@ -7,14 +7,14 @@ import random
 import os
 from flask import Flask
 from threading import Thread
-import time  # 1. 時間計測用に追加
+import time
 
-# 2. 最後に返信した時間を記録する変数
+# --- 状態管理用の変数 ---
 last_reply_time = {}
+is_summarizing = False  # ★要約中かどうかを記録する旗
 
-# --- Renderで「Failed」を防ぐための設定 ---
+# --- Render生存確認用 ---
 app = Flask('')
-
 @app.route('/')
 def home():
     return "Karen is alive!"
@@ -69,125 +69,108 @@ async def get_gemini_response(prompt):
     for model in MODEL_CANDIDATES:
         url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={GEMINI_API_KEY}"
         payload = {"contents": [{"parts": [{"text": f"{SYSTEM_SETTING}\n内容：{prompt}"}]}]}
-        
         try:
-            response = requests.post(url, json=payload, timeout=10, verify=False)
+            response = requests.post(url, json=payload, timeout=15, verify=False)
             res_data = response.json()
-            
+            print(f"Model {model} response status: {response.status_code}")
             if 'candidates' in res_data:
                 return res_data['candidates'][0]['content']['parts'][0]['text']
             else:
+                print(f"Error from Gemini: {res_data}")
                 continue 
         except Exception as e:
+            print(f"Connection Error with {model}: {e}")
             continue
     return None
 
 @bot.event
 async def on_ready():
     print(f'------------------------------------')
-    print(f'カレン完全版（連投ガード＋女子リスト）起動！')
+    print(f'カレン完全版（要約中お喋り停止機能付き）起動！')
     print(f'------------------------------------')
 
 @bot.event
 async def on_message(message):
-    global last_reply_time
+    global last_reply_time, is_summarizing
 
-    # 1. Bot自身の発言、または他のBotの発言なら即終了
-    if message.author.bot:
+    if message.author.bot: return
+    if message.channel.id not in ALLOWED_CHANNELS: return
+
+    # ★重要：要約中なら、コマンド以外は全て無視して全集中する
+    if is_summarizing and not message.content.startswith('!'):
         return
 
-    # 2. 許可されていないチャンネルは無視
-    if message.channel.id not in ALLOWED_CHANNELS:
-        return
-
-    # ---------------------------------------------------------
-    # ★ 権限チェック：特定のロールを持っているか確認
-    # Discordで作成したロール名に書き換えてね（例: "お兄ちゃん"）
-    # ---------------------------------------------------------
+    # 権限チェック
     ALLOWED_ROLE_NAME = "カレンのお兄様"
     has_permission = any(role.name == ALLOWED_ROLE_NAME for role in message.author.roles)
 
-    # 3. 連投防止ストッパー
+    # 連投防止（3秒）
     current_time = time.time()
     last_time = last_reply_time.get(message.channel.id, 0)
-    if current_time - last_time < 3:
-        return
+    if current_time - last_time < 3: return
 
-    # 4. 判定（メンションされたか、10%の確率で割り込むか）
-    # メンションを有効に戻したいときは False を bot.user.mentioned_in(message) に変えてね
-    is_mentioned = bot.user.mentioned_in(message) 
+    # 判定（メンション or 10%）
+    is_mentioned = bot.user.mentioned_in(message)
     is_lucky = random.random() < 0.1
 
-    # 【重要】許可されたロールを持ち、かつ（メンション or 10%当選）の時だけ実行
     if has_permission and (is_mentioned or is_lucky):
-        # 返信処理の前に時間を記録
         last_reply_time[message.channel.id] = current_time
-
         async with message.channel.typing():
-            # 直近の会話履歴を取得（5件）
             context = []
             async for msg in message.channel.history(limit=5):
                 context.append(f"{msg.author.display_name}: {msg.content}")
             history_text = "\n".join(reversed(context))
-
-            speaker = message.author.display_name
-            prompt = (
-                f"会話の流れ:\n{history_text}\n\n"
-                f"【指示】甘えん坊な妹カレンとして「{speaker}」にお返事して。\n"
-                f"1行20文字以内、2行程度で、最後は照れ隠しでデレてね！"
-            )
-            
-            # Geminiにお返事を依頼（MODEL_CANDIDATESの順に試すよ）
+            prompt = f"会話履歴:\n{history_text}\n\n【指示】「{message.author.display_name}」にお返事して。"
             answer = await get_gemini_response(prompt)
-            
             if answer:
-                if is_mentioned:
-                    await message.reply(answer)
-                else:
-                    await message.channel.send(answer)
+                if is_mentioned: await message.reply(answer)
+                else: await message.channel.send(answer)
         return
 
-    # 5. コマンド（!要約 など）を処理できるようにする
     await bot.process_commands(message)
 
 @bot.command()
-async def 要約(ctx, limit: int = 30): # 30件くらいが安定するよ！
+async def 要約(ctx, limit: int = 30):
+    global is_summarizing
+    
     ALLOWED_ROLE_NAME = "カレンのお兄様"
     has_role = any(role.name == ALLOWED_ROLE_NAME for role in ctx.author.roles)
-
     if not has_role:
-        await ctx.send("その役職を持ってない人の命令は聞けないもん！")
+        await ctx.send("お兄様以外の命令は聞けないもん！")
         return
 
-    await ctx.send(f"お兄様、了解です！今から30件分のログを読んで報告書を作るから、ちょっとだけ待っててね？")
+    # ★要約開始：旗を立ててお喋りを止める
+    is_summarizing = True
+    await ctx.send(f"了解です！30件分のログを読んでくるね。終わるまでカレンはお喋りお休みするよ。")
     
-    async with ctx.typing(): # 考えてる間「入力中...」にするよ
-        messages = []
-        async for msg in ctx.channel.history(limit=limit):
-            if msg.author == bot.user or msg.content.startswith('!'): continue
-            # メッセージが空（画像だけとか）じゃないかチェック
-            if msg.content:
-                messages.append(f"{msg.author.display_name}: {msg.content}")
-        
-        if not messages:
-            await ctx.send("あれれ？読み込めるメッセージがなかったよ……")
-            return
+    try:
+        async with ctx.typing():
+            messages = []
+            async for msg in ctx.channel.history(limit=limit):
+                if msg.author == bot.user or msg.content.startswith('!'): continue
+                if msg.content:
+                    messages.append(f"{msg.author.display_name}: {msg.content}")
+            
+            if not messages:
+                await ctx.send("読み込めるメッセージがなかったよ……")
+                return
 
-        chat_text = "\n".join(reversed(messages))
-        prompt = f"以下の会話の流れを、甘えん坊な妹カレンとしてお兄様に可愛く報告（要約）して！:\n{chat_text}"
-        
-        summary = await get_gemini_response(prompt)
-        
-        if summary:
-            # 報告書が長すぎると送れないから分割する工夫
-            if len(summary) > 1900:
-                summary = summary[:1900] + "……（長すぎたからここまでだよ！）"
-            await ctx.send(f"**【カレンの報告書】**\n{summary}")
-        else:
-            await ctx.send("ごめんねお兄様……。一生懸命考えたんだけど、うまくまとめられなかったみたい……。もう一回やってみていい？")
+            chat_text = "\n".join(reversed(messages))
+            prompt = f"以下の会話をカレンとして可愛く要約して！:\n{chat_text}"
+            summary = await get_gemini_response(prompt)
+            
+            if summary:
+                if len(summary) > 1900: summary = summary[:1900] + "..."
+                await ctx.send(f"**【カレンの報告書】**\n{summary}")
+            else:
+                await ctx.send("ごめんね、うまくまとめられなかったみたい。")
+    finally:
+        # ★終了：旗を下ろしてお喋り再開
+        is_summarizing = False
 
 keep_alive()
 bot.run(DISCORD_TOKEN)
+
 
 
 
