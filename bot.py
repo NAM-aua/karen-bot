@@ -7,6 +7,10 @@ import random
 import os
 from flask import Flask
 from threading import Thread
+import time  # 1. 時間計測用に追加
+
+# 2. 最後に返信した時間を記録する変数
+last_reply_time = {}
 
 # --- Renderで「Failed」を防ぐための設定 ---
 app = Flask('')
@@ -16,7 +20,6 @@ def home():
     return "Karen is alive!"
 
 def run():
-    # Renderの無料枠では 10000番ポート を使うのが一番確実だよ！
     app.run(host='0.0.0.0', port=10000)
 
 def keep_alive():
@@ -30,14 +33,13 @@ DISCORD_TOKEN = os.getenv('DISCORD_TOKEN')
 GEMINI_API_KEY = os.getenv('GEMINI_API_KEY')
 ALLOWED_CHANNELS = [1255505687807524928, 1251376400775254149, 1268434232028430348]
 
-# モデルの優先順位（最新の gemini-3-flash を最初にしたよ！）
 MODEL_CANDIDATES = ["gemini-3-flash", "gemini-2.5-flash", "gemini-2.5-flash-lite"]
 
 intents = discord.Intents.default()
 intents.message_content = True
 bot = commands.Bot(command_prefix="!", intents=intents)
 
-# 妹系カレンちゃん＋NIKKE専門家の設定
+# 妹系カレンちゃん＋NIKKE専門家の設定（おねーちゃんリスト対応版）
 SYSTEM_SETTING = """
 あなたは、ちょっと生意気だけど根は可愛い妹『カレン』だよ。
 口は少し悪いけど、相手を嫌っているわけじゃない「ツンデレ」な感じを目指してね。
@@ -82,51 +84,57 @@ async def get_gemini_response(prompt):
             if 'candidates' in res_data:
                 return res_data['candidates'][0]['content']['parts'][0]['text']
             else:
-                print(f"モデル {model} は制限中だよ: {res_data.get('error', {}).get('message', '上限超過')}")
                 continue 
         except Exception as e:
-            print(f"通信エラー ({model}): {e}")
             continue
     return None
 
 @bot.event
 async def on_ready():
     print(f'------------------------------------')
-    print(f'カレン完全版（NIKKE対応＋Render対策）起動！')
+    print(f'カレン完全版（連投ガード＋女子リスト）起動！')
     print(f'------------------------------------')
 
 @bot.event
 async def on_message(message):
-    # 【最優先】Bot自身の発言、または他のBotの発言なら即終了！
+    global last_reply_time
+
+    # 1. Bot自身の発言、または他のBotの発言なら即終了
     if message.author.bot:
         return
 
-    # 許可されていないチャンネルは無視
+    # 2. 許可されていないチャンネルは無視
     if message.channel.id not in ALLOWED_CHANNELS:
         return
 
-    # 会話履歴を取得（自分の発言も含めて流れを把握するため）
-    context = []
-    async for msg in message.channel.history(limit=5):
-        context.append(f"{msg.author.display_name}: {msg.content}")
-    history_text = "\n".join(reversed(context))
-
-    # --- 1. メンションされた時の反応 ---
-    if bot.user.mentioned_in(message):
-        async with message.channel.typing():
-            prompt = f"これまでの流れ:\n{history_text}\n\n【重要】あなたは生意気な妹カレン。冒頭の「お兄ちゃん！」は禁止。1行20文字以内、2行程度で短く生意気に返して！"
-            answer = await get_gemini_response(prompt)
-            if answer:
-                await message.reply(answer)
+    # 3. 【重要】連投防止ストッパー：同じチャンネルで3秒以内なら無視
+    current_time = time.time()
+    last_time = last_reply_time.get(message.channel.id, 0)
+    if current_time - last_time < 3:
         return
 
-    # --- 2. 10%の確率でランダム割り込み ---
-    if random.random() < 0.1:
+    # メンションされたか、10%の確率で割り込むか判定
+    is_mentioned = bot.user.mentioned_in(message)
+    is_lucky = random.random() < 0.1
+
+    if is_mentioned or is_lucky:
+        # 返信処理に入る直前に時間を記録して、次のリトライを弾く
+        last_reply_time[message.channel.id] = current_time
+
         async with message.channel.typing():
-            prompt = f"会話の流れ:\n{history_text}\n\n【重要】あなたは生意気な妹カレン。1行20文字以内、2行程度で短く生意気に割り込んで！"
+            context = []
+            async for msg in message.channel.history(limit=5):
+                context.append(f"{msg.author.display_name}: {msg.content}")
+            history_text = "\n".join(reversed(context))
+
+            prompt = f"これまでの流れ:\n{history_text}\n\n【重要】あなたは生意気な妹カレン。1行20文字以内、2行程度で短く生意気に返して！"
             answer = await get_gemini_response(prompt)
+            
             if answer:
-                await message.channel.send(answer)
+                if is_mentioned:
+                    await message.reply(answer)
+                else:
+                    await message.channel.send(answer)
         return
 
     await bot.process_commands(message)
@@ -146,17 +154,5 @@ async def 要約(ctx, limit: int = 50):
     if summary:
         await ctx.send(f"**【カレンの報告書】**\n{summary}")
 
-# --- ここが重要！ ---
-# 1. サーバーを起動
 keep_alive()
-# 2. Botを起動
 bot.run(DISCORD_TOKEN)
-
-
-
-
-
-
-
-
-
