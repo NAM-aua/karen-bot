@@ -33,7 +33,7 @@ DISCORD_TOKEN = os.getenv('DISCORD_TOKEN')
 GEMINI_API_KEY = os.getenv('GEMINI_API_KEY')
 ALLOWED_CHANNELS = [1255505687807524928, 1251376400775254149, 1268434232028430348]
 
-MODEL_CANDIDATES = ["gemini-3-flash", "gemini-2.5-flash", "gemini-2.5-flash-lite"]
+MODEL_CANDIDATES = ["gemini-3-flash", "gemini-2.5-flash", "gemini-2.5-flash-lite", "gemini-1.5-flash"]
 
 intents = discord.Intents.default()
 intents.message_content = True
@@ -167,6 +167,7 @@ async def 要約(ctx, limit: int = 50):
 
 keep_alive()
 bot.run(DISCORD_TOKEN)
+
 
 
 
