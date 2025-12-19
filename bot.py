@@ -138,7 +138,7 @@ async def on_message(message):
                 f"生意気な口調の中にも、相手を慕っている可愛らしさをしっかり出して。\n"
                 f"1行20文字以内、2行程度で、最後はデレるような感じでお願いね！"
             )
-            await get_gemini_response(prompt)
+            answer = await get_gemini_response(prompt) 
             
             if answer:
                 if is_mentioned:
@@ -166,6 +166,7 @@ async def 要約(ctx, limit: int = 50):
 
 keep_alive()
 bot.run(DISCORD_TOKEN)
+
 
 
 
