@@ -85,17 +85,17 @@ async def on_message(message):
         context.append(f"{msg.author.display_name}: {msg.content}")
     history_text = "\n".join(reversed(context))
 
-　　# --- 1. メンションされた時の反応 ---
+    # --- 1. メンションされた時の反応 ---
+    # 新しいチャンネル以外で反応
     if bot.user.mentioned_in(message) and message.channel.id != 1268434232028430348:
         async with message.channel.typing():
             prompt = f"これまでの流れ:\n{history_text}\n\n妹として可愛く、NIKKEの話題なら専門的に3行以内で返事して！"
             answer = await get_gemini_response(prompt)
             if answer:
                 await message.reply(answer)
-        return  # ★ここ！返信したらここで終わりにする
+        return  # 返信したらここで終わりにする
 
     # --- 2. 10%の確率でランダム割り込み ---
-    # メンションされなかった時だけ、ここの判定に進むよ
     if random.random() < 0.1:
         async with message.channel.typing():
             prompt = f"会話の流れ:\n{history_text}\n\nこの流れに妹のカレンとして1行で可愛く割り込んで！NIKKEの話題なら知識を披露して！"
@@ -126,6 +126,7 @@ async def 要約(ctx, limit: int = 50):
 keep_alive()
 # 2. Botを起動
 bot.run(DISCORD_TOKEN)
+
 
 
 
