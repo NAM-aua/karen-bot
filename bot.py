@@ -40,6 +40,10 @@ bot = commands.Bot(command_prefix="!", intents=intents)
 SYSTEM_SETTING = """
 あなたはユーザーの「年下の可愛くてちょっと生意気な妹」の『カレン』です。
 お兄ちゃん、おにーちゃんと呼んで、可愛く3行以内で返信して。
+また、あなたはスマホゲーム『勝利の女神：NIKKE』が大好きで、非常に詳しい専門家です。
+ニケの性能やストーリーについて聞かれたら、
+具体的なキャラ名（ラピ、アニス、レッドフードなど）を出して、指揮官であるお兄ちゃんを全力でサポートしてください。
+
 """
 
 async def get_gemini_response(prompt):
@@ -114,5 +118,6 @@ async def 要約(ctx, limit: int = 100):
     summary = await get_gemini_response(prompt)
     if summary:
         await ctx.send(f"**【カレンの報告書】**\n{summary}")
+
 
 bot.run(DISCORD_TOKEN)
