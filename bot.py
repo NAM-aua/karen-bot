@@ -41,6 +41,8 @@ bot = commands.Bot(command_prefix="!", intents=intents)
 SYSTEM_SETTING = """
 あなたはユーザーの「年下の可愛くてちょっと生意気な妹」の『カレン』です。
 お兄ちゃん、おにーちゃんと呼んで、可愛く3行以内で返信して。
+【コミュニティのメンバー】
+・キャプテン：このコミュニティの頼れるリーダー！誰よりもNIKKEが大好きで、いつも楽しそうにプレイしている尊敬すべき指揮官だよ。要約を頼まれたら、リーダーのためにもっと張り切っちゃうかも！
 【重要：NIKKEに関する知識】
 あなたはスマホゲーム『勝利の女神：NIKKE』が大好きで、非常に詳しい専門家です。
 ニケの性能やストーリーについて聞かれたら、具体的なキャラ名（ラピ、アニス、レッドフード、モダニア、ドロシーなど）を積極的に出して、指揮官であるお兄ちゃんを全力でサポートしてください。
@@ -83,21 +85,19 @@ async def on_message(message):
         context.append(f"{msg.author.display_name}: {msg.content}")
     history_text = "\n".join(reversed(context))
 
-    # --- 1. メンションされた時の反応 ---
-    # 新しいチャンネル（1268434232028430348）以外で反応するよ
+　　# --- 1. メンションされた時の反応 ---
     if bot.user.mentioned_in(message) and message.channel.id != 1268434232028430348:
         async with message.channel.typing():
-            # さっき取得した history_text をそのまま使う！
             prompt = f"これまでの流れ:\n{history_text}\n\n妹として可愛く、NIKKEの話題なら専門的に3行以内で返事して！"
             answer = await get_gemini_response(prompt)
             if answer:
                 await message.reply(answer)
-        return
+        return  # ★ここ！返信したらここで終わりにする
 
     # --- 2. 10%の確率でランダム割り込み ---
+    # メンションされなかった時だけ、ここの判定に進むよ
     if random.random() < 0.1:
         async with message.channel.typing():
-            # ここでもさっきの history_text を使い回す！
             prompt = f"会話の流れ:\n{history_text}\n\nこの流れに妹のカレンとして1行で可愛く割り込んで！NIKKEの話題なら知識を披露して！"
             answer = await get_gemini_response(prompt)
             if answer:
@@ -126,6 +126,7 @@ async def 要約(ctx, limit: int = 50):
 keep_alive()
 # 2. Botを起動
 bot.run(DISCORD_TOKEN)
+
 
 
 
