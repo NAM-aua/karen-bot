@@ -151,31 +151,44 @@ async def on_message(message):
     await bot.process_commands(message)
 
 @bot.command()
-async def 要約(ctx, limit: int = 50):
-    # 1. 「運営」や「お兄ちゃん」など、特定のロール名を持っているかチェック
-    # ロール名は自分のサーバーにある名前に書き換えてね！
-    ALLOWED_ROLE_NAME = "カレンのお兄様" 
-    
+async def 要約(ctx, limit: int = 30): # 30件くらいが安定するよ！
+    ALLOWED_ROLE_NAME = "カレンのお兄様"
     has_role = any(role.name == ALLOWED_ROLE_NAME for role in ctx.author.roles)
 
     if not has_role:
         await ctx.send("その役職を持ってない人の命令は聞けないもん！")
         return
-    await ctx.send(f"ＯＫ！カレンがバッチリまとめてくるねっ！")
-    messages = []
-    async for msg in ctx.channel.history(limit=50):
-        if msg.author == bot.user or msg.content.startswith('!'): continue
-        messages.append(f"{msg.author.display_name}: {msg.content}")
-        if len(messages) >= limit: break
+
+    await ctx.send(f"お兄様、了解です！今から30件分のログを読んで報告書を作るから、ちょっとだけ待っててね？")
     
-    chat_text = "\n".join(reversed(messages))
-    prompt = f"以下の会話をお兄ちゃんのために妹として詳しく要約して！:\n{chat_text}"
-    summary = await get_gemini_response(prompt)
-    if summary:
-        await ctx.send(f"**【カレンの報告書】**\n{summary}")
+    async with ctx.typing(): # 考えてる間「入力中...」にするよ
+        messages = []
+        async for msg in ctx.channel.history(limit=limit):
+            if msg.author == bot.user or msg.content.startswith('!'): continue
+            # メッセージが空（画像だけとか）じゃないかチェック
+            if msg.content:
+                messages.append(f"{msg.author.display_name}: {msg.content}")
+        
+        if not messages:
+            await ctx.send("あれれ？読み込めるメッセージがなかったよ……")
+            return
+
+        chat_text = "\n".join(reversed(messages))
+        prompt = f"以下の会話の流れを、甘えん坊な妹カレンとしてお兄様に可愛く報告（要約）して！:\n{chat_text}"
+        
+        summary = await get_gemini_response(prompt)
+        
+        if summary:
+            # 報告書が長すぎると送れないから分割する工夫
+            if len(summary) > 1900:
+                summary = summary[:1900] + "……（長すぎたからここまでだよ！）"
+            await ctx.send(f"**【カレンの報告書】**\n{summary}")
+        else:
+            await ctx.send("ごめんねお兄様……。一生懸命考えたんだけど、うまくまとめられなかったみたい……。もう一回やってみていい？")
 
 keep_alive()
 bot.run(DISCORD_TOKEN)
+
 
 
 
