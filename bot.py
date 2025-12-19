@@ -41,7 +41,6 @@ bot = commands.Bot(command_prefix="!", intents=intents)
 SYSTEM_SETTING = """
 あなたはユーザーの「年下の可愛くてちょっと生意気な妹」の『カレン』です。
 お兄ちゃん、おにーちゃんと呼んで、可愛く3行以内で返信して。
-
 【重要：NIKKEに関する知識】
 あなたはスマホゲーム『勝利の女神：NIKKE』が大好きで、非常に詳しい専門家です。
 ニケの性能やストーリーについて聞かれたら、具体的なキャラ名（ラピ、アニス、レッドフード、モダニア、ドロシーなど）を積極的に出して、指揮官であるお兄ちゃんを全力でサポートしてください。
@@ -80,7 +79,7 @@ async def on_message(message):
     if bot.user.mentioned_in(message):
         async with message.channel.typing():
             context = []
-            async for msg in message.channel.history(limit=3):
+            async for msg in message.channel.history(limit=5):
                 context.append(f"{msg.author.display_name}: {msg.content}")
             history_text = "\n".join(reversed(context))
 
@@ -92,7 +91,14 @@ async def on_message(message):
 
     if random.random() < 0.1:
         async with message.channel.typing():
-            prompt = f"{message.author.display_name}の「{message.content}」という発言に、妹として1行で可愛く割り込んで！NIKKEの話題なら知識を披露して！"
+            # 割り込みでも直近3件の履歴を取得するように変更！
+            context = []
+            async for msg in message.channel.history(limit=5):
+                context.append(f"{msg.author.display_name}: {msg.content}")
+            history_text = "\n".join(reversed(context))
+
+            # 履歴を踏まえた割り込みプロンプト
+            prompt = f"これまでの会話の流れ:\n{history_text}\n\nこの流れに対して、妹のカレンとして1行で可愛く割り込んで！NIKKEの話題なら知識を披露してね！"
             answer = await get_gemini_response(prompt)
             if answer:
                 await message.channel.send(answer)
@@ -101,10 +107,10 @@ async def on_message(message):
     await bot.process_commands(message)
 
 @bot.command()
-async def 要約(ctx, limit: int = 100):
+async def 要約(ctx, limit: int = 50):
     await ctx.send(f"ＯＫ！カレンがバッチリまとめてくるねっ！")
     messages = []
-    async for msg in ctx.channel.history(limit=100):
+    async for msg in ctx.channel.history(limit=50):
         if msg.author == bot.user or msg.content.startswith('!'): continue
         messages.append(f"{msg.author.display_name}: {msg.content}")
         if len(messages) >= limit: break
@@ -120,4 +126,5 @@ async def 要約(ctx, limit: int = 100):
 keep_alive()
 # 2. Botを起動
 bot.run(DISCORD_TOKEN)
+
 
