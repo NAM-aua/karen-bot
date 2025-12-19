@@ -102,7 +102,7 @@ async def on_message(message):
 
 @bot.command()
 async def 要約(ctx, limit: int = 100):
-    await ctx.send(f"お兄ちゃん、お待たせ！カレンがバッチリまとめてくるねっ！")
+    await ctx.send(f"ＯＫ！カレンがバッチリまとめてくるねっ！")
     messages = []
     async for msg in ctx.channel.history(limit=100):
         if msg.author == bot.user or msg.content.startswith('!'): continue
@@ -120,3 +120,4 @@ async def 要約(ctx, limit: int = 100):
 keep_alive()
 # 2. Botを起動
 bot.run(DISCORD_TOKEN)
+
