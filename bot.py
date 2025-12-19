@@ -100,23 +100,31 @@ async def on_message(message):
     if message.channel.id not in ALLOWED_CHANNELS:
         return
 
+    # ---------------------------------------------------------
+    # ★ 権限チェック：特定のロールを持っているか確認
+    # Discordで作成したロール名に書き換えてね（例: "お兄ちゃん"）
+    # ---------------------------------------------------------
+    ALLOWED_ROLE_NAME = "カレンのお兄様"
+    has_permission = any(role.name == ALLOWED_ROLE_NAME for role in message.author.roles)
+
     # 3. 連投防止ストッパー
     current_time = time.time()
     last_time = last_reply_time.get(message.channel.id, 0)
     if current_time - last_time < 3:
         return
 
-# メンションされたか、10%の確率で割り込むか判定
-    # is_mentioned = bot.user.mentioned_in(message)  # コメントアウト
-    is_mentioned = False  # メンションは反応しない設定
-    is_lucky = random.random() < 0.2
+    # 4. 判定（メンションされたか、10%の確率で割り込むか）
+    # メンションを有効に戻したいときは False を bot.user.mentioned_in(message) に変えてね
+    is_mentioned = bot.user.mentioned_in(message) 
+    is_lucky = random.random() < 0.1
 
-    # 【重要！】この判定が必要です
-    if is_mentioned or is_lucky:
+    # 【重要】許可されたロールを持ち、かつ（メンション or 10%当選）の時だけ実行
+    if has_permission and (is_mentioned or is_lucky):
         # 返信処理の前に時間を記録
         last_reply_time[message.channel.id] = current_time
 
         async with message.channel.typing():
+            # 直近の会話履歴を取得（5件）
             context = []
             async for msg in message.channel.history(limit=5):
                 context.append(f"{msg.author.display_name}: {msg.content}")
@@ -129,7 +137,7 @@ async def on_message(message):
                 f"1行20文字以内、2行程度で、最後は照れ隠しでデレてね！"
             )
             
-            # ここが心臓部！変数 answer にしっかり代入するよ
+            # Geminiにお返事を依頼（MODEL_CANDIDATESの順に試すよ）
             answer = await get_gemini_response(prompt)
             
             if answer:
@@ -139,10 +147,20 @@ async def on_message(message):
                     await message.channel.send(answer)
         return
 
+    # 5. コマンド（!要約 など）を処理できるようにする
     await bot.process_commands(message)
 
 @bot.command()
 async def 要約(ctx, limit: int = 50):
+    # 1. 「運営」や「お兄ちゃん」など、特定のロール名を持っているかチェック
+    # ロール名は自分のサーバーにある名前に書き換えてね！
+    ALLOWED_ROLE_NAME = "カレンのお兄様" 
+    
+    has_role = any(role.name == ALLOWED_ROLE_NAME for role in ctx.author.roles)
+
+    if not has_role:
+        await ctx.send("その役職を持ってない人の命令は聞けないもん！")
+        return
     await ctx.send(f"ＯＫ！カレンがバッチリまとめてくるねっ！")
     messages = []
     async for msg in ctx.channel.history(limit=50):
@@ -158,6 +176,7 @@ async def 要約(ctx, limit: int = 50):
 
 keep_alive()
 bot.run(DISCORD_TOKEN)
+
 
 
 
