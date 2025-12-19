@@ -93,35 +93,38 @@ async def on_ready():
 
 @bot.event
 async def on_message(message):
-    # 許可されていないチャンネルやBot自身の発言は無視
-    if message.author == bot.user or message.channel.id not in ALLOWED_CHANNELS:
+    # 【最優先】Bot自身の発言、または他のBotの発言なら即終了！
+    if message.author.bot:
         return
 
-    # ★ここで1回だけ履歴を取得して、変数 history_text に入れる
+    # 許可されていないチャンネルは無視
+    if message.channel.id not in ALLOWED_CHANNELS:
+        return
+
+    # 会話履歴を取得（自分の発言も含めて流れを把握するため）
     context = []
     async for msg in message.channel.history(limit=5):
         context.append(f"{msg.author.display_name}: {msg.content}")
     history_text = "\n".join(reversed(context))
 
     # --- 1. メンションされた時の反応 ---
-    # 新しいチャンネル以外で反応
-    if bot.user.mentioned_in(message) and message.channel.id != 1268434232028430348:
+    if bot.user.mentioned_in(message):
         async with message.channel.typing():
-            prompt = f"これまでの流れ:\n{history_text}\n\n妹として可愛く、NIKKEの話題なら専門的に3行以内で返事して！"
+            prompt = f"これまでの流れ:\n{history_text}\n\n【重要】あなたは生意気な妹カレン。冒頭の「お兄ちゃん！」は禁止。1行20文字以内、2行程度で短く生意気に返して！"
             answer = await get_gemini_response(prompt)
             if answer:
                 await message.reply(answer)
-        return  # 返信したらここで終わりにする
+        return
 
     # --- 2. 10%の確率でランダム割り込み ---
     if random.random() < 0.1:
         async with message.channel.typing():
-            prompt = f"会話の流れ:\n{history_text}\n\nこの流れに妹のカレンとして1行で可愛く割り込んで！NIKKEの話題なら知識を披露して！"
+            prompt = f"会話の流れ:\n{history_text}\n\n【重要】あなたは生意気な妹カレン。1行20文字以内、2行程度で短く生意気に割り込んで！"
             answer = await get_gemini_response(prompt)
             if answer:
                 await message.channel.send(answer)
         return
-        
+
     await bot.process_commands(message)
 
 @bot.command()
@@ -144,6 +147,7 @@ async def 要約(ctx, limit: int = 50):
 keep_alive()
 # 2. Botを起動
 bot.run(DISCORD_TOKEN)
+
 
 
 
