@@ -141,7 +141,7 @@ async def 要約(ctx, limit: int = 30):
 
     # ★要約開始：旗を立ててお喋りを止める
     is_summarizing = True
-    await ctx.send(f"了解です！30件分のログを読んでくるね。終わるまでカレンはお喋りお休みするよ。")
+    await ctx.send(f"了解です、お兄様。読み終えるまでちょっと待ってね！")
     
     try:
         async with ctx.typing():
@@ -170,6 +170,7 @@ async def 要約(ctx, limit: int = 30):
 
 keep_alive()
 bot.run(DISCORD_TOKEN)
+
 
 
 
