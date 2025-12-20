@@ -96,7 +96,7 @@ async def on_message(message):
     if message.author.bot: return
     if message.channel.id not in ALLOWED_CHANNELS: return
 
-    # ★重要：要約中なら、コマンド以外は全て無視して全集中する
+    # 要約中はお休み
     if is_summarizing and not message.content.startswith('!'):
         return
 
@@ -109,19 +109,27 @@ async def on_message(message):
     last_time = last_reply_time.get(message.channel.id, 0)
     if current_time - last_time < 3: return
 
-    # 判定（メンション or 10%）
+    # 判定
     is_mentioned = bot.user.mentioned_in(message)
-    is_lucky = random.random() < 0.1
+    is_lucky = random.random() < 0.1  # 10%の確率
 
-    if has_permission and (is_mentioned or is_lucky):
+    # --- ここが修正ポイント！ ---
+    # 1. メンションされた場合 → お兄様ロールが必要
+    # 2. 10%の幸運（割り込み）→ 誰にでも反応！
+    should_reply = (has_permission and is_mentioned) or is_lucky
+
+    if should_reply:
         last_reply_time[message.channel.id] = current_time
         async with message.channel.typing():
             context = []
             async for msg in message.channel.history(limit=5):
                 context.append(f"{msg.author.display_name}: {msg.content}")
             history_text = "\n".join(reversed(context))
+            
+            # 割り込みの時は「お兄ちゃん」じゃなくて名前で呼ぶように促す
             prompt = f"会話履歴:\n{history_text}\n\n【指示】「{message.author.display_name}」にお返事して。"
             answer = await get_gemini_response(prompt)
+            
             if answer:
                 if is_mentioned: await message.reply(answer)
                 else: await message.channel.send(answer)
@@ -170,6 +178,7 @@ async def 要約(ctx, limit: int = 30):
 
 keep_alive()
 bot.run(DISCORD_TOKEN)
+
 
 
 
