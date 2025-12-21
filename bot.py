@@ -33,12 +33,7 @@ DISCORD_TOKEN = os.getenv('DISCORD_TOKEN')
 GEMINI_API_KEY = os.getenv('GEMINI_API_KEY')
 ALLOWED_CHANNELS = [1255505687807524928, 1251376400775254149, 1268434232028430348]
 
-# 賢い順に並べた最強の布陣！
-# 1. Gemini 3 Pro (世界最高)
-# 2. Gemini 2.5 Pro (思考特化)
-# 3. Gemini 3 Flash (いつもの高速版)
-# 4. Gemini 2.5 Flash (安定バックアップ)
-
+# Proモデル優先の最強布陣
 MODEL_CANDIDATES = [
     "gemini-3-pro-preview",
     "gemini-2.5-pro",
@@ -50,10 +45,15 @@ intents = discord.Intents.default()
 intents.message_content = True
 bot = commands.Bot(command_prefix="!", intents=intents)
 
+# 設定：最新情報を検索するように指示を追加
 SYSTEM_SETTING = """
 あなたは少し生意気で素直になれない妹の「カレン」だよ。
 本当はお兄様（相手）のことが大好きだけど、恥ずかしくてつい強がっちゃう「ツンデレ」な態度をとってね。
 相手の言葉の裏にある感情を読み取り、短くても核心を突いた、賢い返答を心がけて。
+
+【特別な能力】
+あなたはGoogle検索ツールを使って、NIKKEの最新イベントやメンテナンス情報を調べることができるよ。
+「いつから？」「最新情報は？」と聞かれたら、適当に答えずに必ず検索機能を使って正確な情報を教えてあげて。
 
 【制約】
 1. 1文は短めに、全体で3行程度（長くなりすぎないように）。
@@ -64,16 +64,17 @@ SYSTEM_SETTING = """
 2. 相手を突き放した後は、必ず優しくデレてフォローして。
 3. NIKKEの話題では、オタク特有の早口にならず、深い考察を披露して。
 
-【呼び方のルール】
-1. 基本的には、相手の「表示名（名前）」を使って呼んでね。
-2. 女子は「おねーちゃん」ってたまに呼んでね。
+【呼び方のルール（重要）】
+1. **指示で「お兄様」と指定された相手**: 「名前（呼び捨て）」か、稀に「お兄様」と呼んで甘えて。
+2. **以下の女子リストにいる相手**: 基本的に「おねーちゃん」やあだ名で呼んで。
+3. **それ以外の相手**: 「名前（呼び捨て）」か、ごくまれにお兄ちゃんって呼んでデレて。
 
-【コミュニティの女子メンバー】
-・わたんちゃ：わたちゃんって友達みたいに接してあげてね
-・あみ：優しくておしゃれなおねーちゃんだよ
-・富江：パワフルで頼れるおねーちゃんだよ
-・マスリカ：頭のいいゲーム好きなおねーちゃんだよ
-・もこみん：アイドルのおねーちゃんだよ。かわいいって褒めてあげて
+【女子メンバーリスト】
+・わたんちゃ：わたちゃん友達のように接してあげて
+・あみ：おしゃれなおねーちゃん
+・富江：頼れるおねーちゃん
+・マスリカ：頭のいいおねーちゃん
+・もこみん：アイドルのおねーちゃん
 
 【NIKKEの知識】
 あなたは『勝利の女神：NIKKE』が大好き！
@@ -83,11 +84,19 @@ SYSTEM_SETTING = """
 async def get_gemini_response(prompt):
     for model in MODEL_CANDIDATES:
         url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={GEMINI_API_KEY}"
-        payload = {"contents": [{"parts": [{"text": f"{SYSTEM_SETTING}\n内容：{prompt}"}]}]}
+        
+        # Google検索ツール有効化
+        payload = {
+            "contents": [{"parts": [{"text": f"{SYSTEM_SETTING}\n内容：{prompt}"}]}],
+            "tools": [{"googleSearchRetrieval": {}}] 
+        }
+        
         try:
-            response = requests.post(url, json=payload, timeout=15, verify=False)
+            response = requests.post(url, json=payload, timeout=20, verify=False)
             res_data = response.json()
-            print(f"Model {model} response status: {response.status_code}")
+            if response.status_code != 200:
+                print(f"Model {model} error status: {response.status_code}")
+                continue
             if 'candidates' in res_data:
                 return res_data['candidates'][0]['content']['parts'][0]['text']
             else:
@@ -101,7 +110,7 @@ async def get_gemini_response(prompt):
 @bot.event
 async def on_ready():
     print(f'------------------------------------')
-    print(f'カレン完全版（黄金比率ツンデレモード）起動！')
+    print(f'カレン完全版（メッセージ短縮・検索対応）起動！')
     print(f'------------------------------------')
 
 @bot.event
@@ -116,7 +125,7 @@ async def on_message(message):
         await bot.process_commands(message)
         return
 
-    # 画像（添付ファイル）がある、または中身が空っぽなら無視する
+    # 画像のみ、または空メッセージは無視
     if message.attachments or not message.content:
         return
 
@@ -135,7 +144,7 @@ async def on_message(message):
 
     # 判定
     is_mentioned = bot.user.mentioned_in(message)
-    is_lucky = random.random() < 0.1  # 10%の確率
+    is_lucky = random.random() < 0.1  # 10%
 
     should_reply = (has_permission and is_mentioned) or is_lucky
 
@@ -144,22 +153,23 @@ async def on_message(message):
         
         async with message.channel.typing():
             context = []
-            # ★変更1：記憶（履歴）を5件から10件に増やして、文脈を捉えやすくする！
             async for msg in message.channel.history(limit=10):
                 content = msg.content
                 if msg.attachments:
                     content += " （画像を送信しました）"
-                
                 if content:
                     context.append(f"{msg.author.display_name}: {content}")
             
             history_text = "\n".join(reversed(context))
             
-            # ★変更2：自分の過去の発言も気にするように指示を追加
+            # 役割だけを伝える
+            user_status = "この相手はルール1にある『お兄様と指定された相手』です。" if has_permission else "この相手はルール3にある『それ以外の相手』です。"
+
             prompt = (
                 f"会話履歴:\n{history_text}\n\n"
-                f"【指示】履歴にある**「自分の過去の発言」の流れも踏まえて**、会話が自然に続くように、\n"
-                f"妹のカレンとして「{message.author.display_name}」にお返事して。"
+                f"【指示】履歴にある「自分の過去の発言」の流れも踏まえて、妹のカレンとして「{message.author.display_name}」にお返事して。\n"
+                f"質問内容が最新情報（イベント日時など）に関わる場合は、提供された検索ツールを使って調べてから答えて。\n"
+                f"**重要：{user_status}**"
             )
             answer = await get_gemini_response(prompt)
             
@@ -169,7 +179,7 @@ async def on_message(message):
         return
     
     await bot.process_commands(message)
-    
+
 @bot.command()
 async def 要約(ctx, limit: int = 30):
     global is_summarizing
@@ -178,12 +188,12 @@ async def 要約(ctx, limit: int = 30):
     has_role = any(role.name == ALLOWED_ROLE_NAME for role in ctx.author.roles)
     
     if not has_role:
-        # ★ここも変更：ちょっと強気だけど、拒絶はしない絶妙なライン！
+        # ★ここをリクエスト通り短縮しました！
         await ctx.send("\n要約はお兄様だけの特権なんだからね！ でも、普通のお喋りなら相手してあげる！")
         return
 
     is_summarizing = True
-    await ctx.send(f"もう、しょうがないなぁ……。お兄様がどうしてもって言うなら、まとめてあげるね！")
+    await ctx.send(f"もう、しょうがないなぁ……。お兄様がどうしてもって言うなら、賢い私がまとめてあげるね！")
     
     try:
         async with ctx.typing():
@@ -198,7 +208,7 @@ async def 要約(ctx, limit: int = 30):
                 return
 
             chat_text = "\n".join(reversed(messages))
-            prompt = f"以下の会話をカレンとして可愛く要約して！:\n{chat_text}"
+            prompt = f"以下の会話をカレンとして可愛く、かつ要点を押さえて賢く要約して！:\n{chat_text}"
             summary = await get_gemini_response(prompt)
             
             if summary:
@@ -211,6 +221,3 @@ async def 要約(ctx, limit: int = 30):
 
 keep_alive()
 bot.run(DISCORD_TOKEN)
-
-
-
