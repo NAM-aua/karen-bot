@@ -11,7 +11,7 @@ import time
 
 # --- 状態管理用の変数 ---
 last_reply_time = {}
-is_summarizing = False  # 要約中フラグ
+is_summarizing = False
 
 # --- Render生存確認用 ---
 app = Flask('')
@@ -48,7 +48,6 @@ intents = discord.Intents.default()
 intents.message_content = True
 bot = commands.Bot(command_prefix="!", intents=intents)
 
-# --- ★性格設定生成関数 ---
 def get_system_setting(channel_id):
     base_setting = """
 あなたは少し生意気で素直になれない妹の「カレン」だよ。
@@ -63,7 +62,6 @@ def get_system_setting(channel_id):
 1. 冒頭の「お兄ちゃん！」連呼は禁止。
 2. 相手を突き放した後は、必ず優しくデレてフォローして。
 """
-
     if channel_id == NIKKE_CHANNEL_ID:
         specific_setting = """
 【現在のモード：NIKKE専門チャンネル】
@@ -79,7 +77,6 @@ Google検索ツールを使って、最新イベントやメンテナンス情�
 相手がその話題を振ってきた時だけ反応して。基本的には日常会話や、その場の話題に合わせて。
 Google検索は「ニュース」や「天気」など、聞かれたことに対してのみ使って。
 """
-
     common_footer = """
 【呼び方のルール（重要）】
 1. **指示で「お兄様」と指定された相手**: 「名前（呼び捨て）」か、稀に「お兄様」と呼んで甘えて。
@@ -99,11 +96,11 @@ Google検索は「ニュース」や「天気」など、聞かれたことに�
 """
     return base_setting + specific_setting + common_footer
 
+# ★改良版レスポンス取得関数（リトライ機能付き）
 async def get_gemini_response(prompt, channel_id):
     system_prompt = get_system_setting(channel_id)
 
-    # ★ここが新機能！安全フィルターを「なし（BLOCK_NONE）」に設定する
-    # これでアニメのバトル話や少し際どい話題でもブロックされなくなるよ！
+    # 安全フィルター解除設定
     safety_settings = [
         {"category": "HARM_CATEGORY_HARASSMENT", "threshold": "BLOCK_NONE"},
         {"category": "HARM_CATEGORY_HATE_SPEECH", "threshold": "BLOCK_NONE"},
@@ -111,46 +108,57 @@ async def get_gemini_response(prompt, channel_id):
         {"category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "BLOCK_NONE"}
     ]
 
+    # --- 1回目：検索ツール「あり」でチャレンジ ---
     for model in MODEL_CANDIDATES:
         url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={GEMINI_API_KEY}"
         
         payload = {
             "contents": [{"parts": [{"text": f"{system_prompt}\n内容：{prompt}"}]}],
-            "tools": [{"googleSearchRetrieval": {}}],
-            "safetySettings": safety_settings  # ★ここでフィルター設定を適用
+            "tools": [{"googleSearchRetrieval": {}}], # 検索ON
+            "safetySettings": safety_settings
         }
         
         try:
-            # タイムアウトは60秒のまま（検索待ち用）
+            # 検索時は長めに待つ(60秒)
             response = requests.post(url, json=payload, timeout=60, verify=False)
             res_data = response.json()
             
-            if response.status_code != 200:
-                print(f"Model {model} error status: {response.status_code}")
-                continue
-            
-            # candidatesがあるかチェック
-            if 'candidates' in res_data and len(res_data['candidates']) > 0:
-                # もしブロックされた場合、finishReasonがSAFETYになることがある
-                finish_reason = res_data['candidates'][0].get('finishReason')
-                if finish_reason == 'SAFETY':
-                    print(f"Blocked by safety filter: {model}")
-                    continue # 他のモデルで試すか、諦める
-                
+            if response.status_code == 200 and 'candidates' in res_data and len(res_data['candidates']) > 0:
+                # 成功したら返す
                 if 'content' in res_data['candidates'][0]:
                     return res_data['candidates'][0]['content']['parts'][0]['text']
+        except Exception:
+            pass # 失敗したら次のモデルへ、あるいは2周目へ
+
+    # --- 2回目：検索ツール「なし」でリトライ（これが救済措置！） ---
+    # 検索結果がエラー原因だった場合、検索なしなら喋れる可能性が高い
+    print("Retrying without search tools...")
+    for model in MODEL_CANDIDATES:
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={GEMINI_API_KEY}"
+        
+        payload = {
+            "contents": [{"parts": [{"text": f"{system_prompt}\n内容：{prompt}"}]}],
+            # tools を外す！
+            "safetySettings": safety_settings
+        }
+        
+        try:
+            response = requests.post(url, json=payload, timeout=30, verify=False)
+            res_data = response.json()
             
-            print(f"Error from Gemini: {res_data}")
-            continue 
-        except Exception as e:
-            print(f"Connection Error with {model}: {e}")
+            if response.status_code == 200 and 'candidates' in res_data and len(res_data['candidates']) > 0:
+                if 'content' in res_data['candidates'][0]:
+                    # 検索できなかった言い訳をちょこっと足してもいいけど、自然に返せればOK
+                    return res_data['candidates'][0]['content']['parts'][0]['text']
+        except Exception:
             continue
+
     return None
 
 @bot.event
 async def on_ready():
     print(f'------------------------------------')
-    print(f'カレン完全版（リミッター解除・全対応モード）起動！')
+    print(f'カレン完全版（自動リトライ＆エラー報告機能）起動！')
     print(f'------------------------------------')
 
 @bot.event
@@ -159,7 +167,7 @@ async def on_message(message):
 
     if message.author.bot: return
     
-    # スレッド対応
+    # スレッド対応判定
     is_valid_channel = (message.channel.id in ALLOWED_CHANNELS)
     if not is_valid_channel and hasattr(message.channel, 'parent') and message.channel.parent:
         if message.channel.parent.id in ALLOWED_CHANNELS:
@@ -167,33 +175,26 @@ async def on_message(message):
             
     if not is_valid_channel: return
 
-    # 1. コマンド処理
     if message.content.startswith('!'):
         await bot.process_commands(message)
         return
 
-    # 画像のみ、または空メッセージは無視
     if message.attachments or not message.content:
         return
 
-    # 2. 要約中は無視
     if is_summarizing:
         return
 
-    # 権限チェック
     ALLOWED_ROLE_NAME = "カレンのお兄様"
     has_permission = any(role.name == ALLOWED_ROLE_NAME for role in message.author.roles)
 
-    # 連投防止（15秒）
     current_time = time.time()
     last_time = last_reply_time.get(message.channel.id, 0)
     if current_time - last_time < 15: return
 
-    # 判定
     is_mentioned = bot.user.mentioned_in(message)
-    is_lucky = random.random() < 0.1  # 10%
+    is_lucky = random.random() < 0.1
 
-    # 制限（ロール必須 or 10%の幸運）
     should_reply = (has_permission and is_mentioned) or is_lucky
 
     if should_reply:
@@ -228,6 +229,12 @@ async def on_message(message):
             if answer:
                 if is_mentioned: await message.reply(answer)
                 else: await message.channel.send(answer)
+            else:
+                # ★ここが重要！万が一すべて失敗した場合、黙らずにエラーを伝える
+                error_msg = "……うぅ、ごめん。なんか頭が真っ白になっちゃった（エラー発生）。もう一回言ってくれる？"
+                if is_mentioned: await message.reply(error_msg)
+                else: await message.channel.send(error_msg)
+
         return
     
     await bot.process_commands(message)
