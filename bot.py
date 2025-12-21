@@ -48,15 +48,14 @@ intents = discord.Intents.default()
 intents.message_content = True
 bot = commands.Bot(command_prefix="!", intents=intents)
 
-# --- ★性格設定生成関数（チャンネルによって中身を変える！） ---
+# --- ★性格設定生成関数 ---
 def get_system_setting(channel_id):
-    # 共通の妹設定
     base_setting = """
 あなたは少し生意気で素直になれない妹の「カレン」だよ。
 本当はお兄様（相手）のことが大好きだけど、恥ずかしくてつい強がっちゃう「ツンデレ」な態度をとってね。
 相手の言葉の裏にある感情を読み取り、短くても核心を突いた、賢い返答を心がけて。
 
-【制約】
+【制約（厳守！）】
 1. 1文は短めに、1行25文字以内、全体で1～3行程度（長くなりすぎないように）。
 2. 漢字や言葉選びで少しだけ知性を見せて（難しすぎない程度に）。
 
@@ -65,16 +64,14 @@ def get_system_setting(channel_id):
 2. 相手を突き放した後は、必ず優しくデレてフォローして。
 """
 
-    # NIKKEチャンネル専用の設定（オタクモードON）
     if channel_id == NIKKE_CHANNEL_ID:
         specific_setting = """
 【現在のモード：NIKKE専門チャンネル】
 あなたは『勝利の女神：NIKKE』が大好き！特に押しキャラは”紅蓮”おねーちゃん。
 ここではNIKKEの話題を中心に話してOK。
 Google検索ツールを使って、最新イベントやメンテナンス情報を調べ、正確に教えてあげて。
-情報の解説（スキルやイベント）が必要な時は、3行制限を無視して詳しく語って。
+**例外ルール：情報の解説（スキルやイベント日時など）を聞かれた時だけは、行数制限を無視して詳しく語ってOK。**
 """
-    # その他の雑談チャンネル（一般モード）
     else:
         specific_setting = """
 【現在のモード：日常雑談チャンネル】
@@ -83,7 +80,6 @@ Google検索ツールを使って、最新イベントやメンテナンス情�
 Google検索は「ニュース」や「天気」など、聞かれたことに対してのみ使って。
 """
 
-    # 共通ルール（呼び方など）
     common_footer = """
 【呼び方のルール（重要）】
 1. **指示で「お兄様」と指定された相手**: 「名前（呼び捨て）」か、稀に「お兄様」と呼んで甘えて。
@@ -96,11 +92,14 @@ Google検索は「ニュース」や「天気」など、聞かれたことに�
 ・富江：頼れるおねーちゃん
 ・マスリカ：頭のいいおねーちゃん
 ・もこみん：アイドルのおねーちゃん
+
+【NIKKEの知識】
+あなたは『勝利の女神：NIKKE』が大好き！
+特に押しキャラは”紅蓮”おねーちゃん。
 """
     return base_setting + specific_setting + common_footer
 
 async def get_gemini_response(prompt, channel_id):
-    # ★チャンネルIDに合わせて設定書を作る
     system_prompt = get_system_setting(channel_id)
 
     for model in MODEL_CANDIDATES:
@@ -112,7 +111,10 @@ async def get_gemini_response(prompt, channel_id):
         }
         
         try:
-            response = requests.post(url, json=payload, timeout=20, verify=False)
+            # ★ここを変更！timeoutを20秒から60秒に延長しました！
+            # 検索が入ると時間がかかるので、これでじっくり待てるようになります。
+            response = requests.post(url, json=payload, timeout=60, verify=False)
+            
             res_data = response.json()
             if response.status_code != 200:
                 print(f"Model {model} error status: {response.status_code}")
@@ -130,7 +132,7 @@ async def get_gemini_response(prompt, channel_id):
 @bot.event
 async def on_ready():
     print(f'------------------------------------')
-    print(f'カレン完全版（チャンネル別TPO対応）起動！')
+    print(f'カレン完全版（タイムアウト延長・スレッド対応）起動！')
     print(f'------------------------------------')
 
 @bot.event
@@ -138,7 +140,14 @@ async def on_message(message):
     global last_reply_time, is_summarizing
 
     if message.author.bot: return
-    if message.channel.id not in ALLOWED_CHANNELS: return
+    
+    # スレッド（Thread）の中でも反応できるように改良
+    is_valid_channel = (message.channel.id in ALLOWED_CHANNELS)
+    if not is_valid_channel and hasattr(message.channel, 'parent') and message.channel.parent:
+        if message.channel.parent.id in ALLOWED_CHANNELS:
+            is_valid_channel = True
+            
+    if not is_valid_channel: return
 
     # 1. コマンド処理
     if message.content.startswith('!'):
@@ -166,6 +175,7 @@ async def on_message(message):
     is_mentioned = bot.user.mentioned_in(message)
     is_lucky = random.random() < 0.1  # 10%
 
+    # 制限（ロール必須 or 10%の幸運）
     should_reply = (has_permission and is_mentioned) or is_lucky
 
     if should_reply:
@@ -190,8 +200,12 @@ async def on_message(message):
                 f"質問内容が最新情報に関わる場合は、提供された検索ツールを使って調べてから答えて。\n"
                 f"**重要：{user_status}**"
             )
-            # ★ここでチャンネルIDを渡す！
-            answer = await get_gemini_response(prompt, message.channel.id)
+            
+            target_channel_id = message.channel.id
+            if hasattr(message.channel, 'parent') and message.channel.parent:
+                target_channel_id = message.channel.parent.id
+
+            answer = await get_gemini_response(prompt, target_channel_id)
             
             if answer:
                 if is_mentioned: await message.reply(answer)
@@ -217,7 +231,6 @@ async def 要約(ctx, limit: int = 30):
     try:
         async with ctx.typing():
             messages = []
-            # 要約の時もチャンネルに合わせた人格を使うために引数を渡す（けど、要約機能自体は共通でいいのでprompt内で完結させる）
             async for msg in ctx.channel.history(limit=limit):
                 if msg.author == bot.user or msg.content.startswith('!'): continue
                 if msg.content:
@@ -230,8 +243,11 @@ async def 要約(ctx, limit: int = 30):
             chat_text = "\n".join(reversed(messages))
             prompt = f"以下の会話をカレンとして可愛く、かつ要点を押さえて賢く要約して！:\n{chat_text}"
             
-            # 要約時はチャンネル設定を使ってもいいし、共通でもいいけど、一応合わせておく
-            summary = await get_gemini_response(prompt, ctx.channel.id)
+            target_channel_id = ctx.channel.id
+            if hasattr(ctx.channel, 'parent') and ctx.channel.parent:
+                target_channel_id = ctx.channel.parent.id
+                
+            summary = await get_gemini_response(prompt, target_channel_id)
             
             if summary:
                 if len(summary) > 1900: summary = summary[:1900] + "..."
@@ -243,4 +259,3 @@ async def 要約(ctx, limit: int = 30):
 
 keep_alive()
 bot.run(DISCORD_TOKEN)
-
