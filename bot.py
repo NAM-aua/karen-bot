@@ -103,7 +103,7 @@ async def on_message(message):
         await bot.process_commands(message)
         return
 
-    # 画像（添付ファイル）がある、または中身が空っぽなら無視する
+    # 画像（添付ファイル）がある、または中身が空っぽなら無視する（反応しない）
     if message.attachments or not message.content:
         return
 
@@ -128,14 +128,27 @@ async def on_message(message):
 
     if should_reply:
         last_reply_time[message.channel.id] = current_time
+        
+        # ★ここ！インデントを下げて if の中に入れたよ！
         async with message.channel.typing():
             context = []
             async for msg in message.channel.history(limit=5):
-                if msg.content:
-                    context.append(f"{msg.author.display_name}: {msg.content}")
+                # 画像がある時は「(画像を送信しました)」と書き足してあげる
+                content = msg.content
+                if msg.attachments:
+                    content += " （画像を送信しました）"
+                
+                # 中身がある場合だけ履歴に追加
+                if content:
+                    context.append(f"{msg.author.display_name}: {content}")
+            
             history_text = "\n".join(reversed(context))
             
-            prompt = f"会話履歴:\n{history_text}\n\n【指示】「{message.author.display_name}」にお返事して。"
+            # あだ名はAIのセンスにお任せ（親しみやすさ優先！）
+            prompt = (
+                f"会話履歴:\n{history_text}\n\n"
+                f"【指示】履歴を参考に、妹のカレンとして「{message.author.display_name}」にお返事して。\n"
+            )
             answer = await get_gemini_response(prompt)
             
             if answer:
@@ -144,7 +157,7 @@ async def on_message(message):
         return
     
     await bot.process_commands(message)
-
+    
 @bot.command()
 async def 要約(ctx, limit: int = 30):
     global is_summarizing
@@ -186,3 +199,4 @@ async def 要約(ctx, limit: int = 30):
 
 keep_alive()
 bot.run(DISCORD_TOKEN)
+
