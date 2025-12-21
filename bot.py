@@ -33,30 +33,43 @@ DISCORD_TOKEN = os.getenv('DISCORD_TOKEN')
 GEMINI_API_KEY = os.getenv('GEMINI_API_KEY')
 ALLOWED_CHANNELS = [1255505687807524928, 1251376400775254149, 1268434232028430348]
 
-# 404対策済みモデルリスト
-MODEL_CANDIDATES = ["gemini-3-flash-preview", "gemini-2.5-flash", "gemini-2.5-flash-lite"]
+# 賢い順に並べた最強の布陣！
+# 1. Gemini 3 Pro (世界最高)
+# 2. Gemini 2.5 Pro (思考特化)
+# 3. Gemini 3 Flash (いつもの高速版)
+# 4. Gemini 2.5 Flash (安定バックアップ)
+
+MODEL_CANDIDATES = [
+    "gemini-3-pro-preview",
+    "gemini-2.5-pro",
+    "gemini-3-flash-preview",
+    "gemini-2.5-flash"
+]
 
 intents = discord.Intents.default()
 intents.message_content = True
 bot = commands.Bot(command_prefix="!", intents=intents)
 
-# ★ここが黄金比率！「生意気」だけど「愛がある」設定
 SYSTEM_SETTING = """
 あなたは少し生意気で素直になれない妹の「カレン」だよ。
 本当はお兄様（相手）のことが大好きだけど、恥ずかしくてつい強がっちゃう「ツンデレ」な態度をとってね。
-1行25文字以内、2-3行程度で短くお返事してね。
+相手の言葉の裏にある感情を読み取り、短くても核心を突いた、賢い返答を心がけて。
+
+【制約】
+1. 1文は短めに、全体で3行程度（長くなりすぎないように）。
+2. 漢字や言葉選びで少しだけ知性を見せて（難しすぎない程度に）。
 
 【絶対に守るルール】
 1. 冒頭の「お兄ちゃん！」連呼は禁止。
 2. 相手を突き放した後は、必ず優しくデレてフォローして。
-3. 最終的には相手を信頼していることが伝わるようにして。
+3. NIKKEの話題では、オタク特有の早口にならず、深い考察を披露して。
 
 【呼び方のルール】
 1. 基本的には、相手の「表示名（名前）」を使って呼んでね。
 2. 女子は「おねーちゃん」ってたまに呼んでね。
 
 【コミュニティの女子メンバー】
-・わたんちゃ：わたちゃんって呼んであげてね
+・わたんちゃ：わたちゃんって友達みたいに接してあげてね
 ・あみ：優しくておしゃれなおねーちゃんだよ
 ・富江：パワフルで頼れるおねーちゃんだよ
 ・マスリカ：頭のいいゲーム好きなおねーちゃんだよ
@@ -115,10 +128,10 @@ async def on_message(message):
     ALLOWED_ROLE_NAME = "カレンのお兄様"
     has_permission = any(role.name == ALLOWED_ROLE_NAME for role in message.author.roles)
 
-    # 連投防止（3秒）
+    # 連投防止（15秒）
     current_time = time.time()
     last_time = last_reply_time.get(message.channel.id, 0)
-    if current_time - last_time < 3: return
+    if current_time - last_time < 15: return
 
     # 判定
     is_mentioned = bot.user.mentioned_in(message)
@@ -198,5 +211,6 @@ async def 要約(ctx, limit: int = 30):
 
 keep_alive()
 bot.run(DISCORD_TOKEN)
+
 
 
