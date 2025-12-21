@@ -102,28 +102,46 @@ Google検索は「ニュース」や「天気」など、聞かれたことに�
 async def get_gemini_response(prompt, channel_id):
     system_prompt = get_system_setting(channel_id)
 
+    # ★ここが新機能！安全フィルターを「なし（BLOCK_NONE）」に設定する
+    # これでアニメのバトル話や少し際どい話題でもブロックされなくなるよ！
+    safety_settings = [
+        {"category": "HARM_CATEGORY_HARASSMENT", "threshold": "BLOCK_NONE"},
+        {"category": "HARM_CATEGORY_HATE_SPEECH", "threshold": "BLOCK_NONE"},
+        {"category": "HARM_CATEGORY_SEXUALLY_EXPLICIT", "threshold": "BLOCK_NONE"},
+        {"category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "BLOCK_NONE"}
+    ]
+
     for model in MODEL_CANDIDATES:
         url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={GEMINI_API_KEY}"
         
         payload = {
             "contents": [{"parts": [{"text": f"{system_prompt}\n内容：{prompt}"}]}],
-            "tools": [{"googleSearchRetrieval": {}}] 
+            "tools": [{"googleSearchRetrieval": {}}],
+            "safetySettings": safety_settings  # ★ここでフィルター設定を適用
         }
         
         try:
-            # ★ここを変更！timeoutを20秒から60秒に延長しました！
-            # 検索が入ると時間がかかるので、これでじっくり待てるようになります。
+            # タイムアウトは60秒のまま（検索待ち用）
             response = requests.post(url, json=payload, timeout=60, verify=False)
-            
             res_data = response.json()
+            
             if response.status_code != 200:
                 print(f"Model {model} error status: {response.status_code}")
                 continue
-            if 'candidates' in res_data:
-                return res_data['candidates'][0]['content']['parts'][0]['text']
-            else:
-                print(f"Error from Gemini: {res_data}")
-                continue 
+            
+            # candidatesがあるかチェック
+            if 'candidates' in res_data and len(res_data['candidates']) > 0:
+                # もしブロックされた場合、finishReasonがSAFETYになることがある
+                finish_reason = res_data['candidates'][0].get('finishReason')
+                if finish_reason == 'SAFETY':
+                    print(f"Blocked by safety filter: {model}")
+                    continue # 他のモデルで試すか、諦める
+                
+                if 'content' in res_data['candidates'][0]:
+                    return res_data['candidates'][0]['content']['parts'][0]['text']
+            
+            print(f"Error from Gemini: {res_data}")
+            continue 
         except Exception as e:
             print(f"Connection Error with {model}: {e}")
             continue
@@ -132,7 +150,7 @@ async def get_gemini_response(prompt, channel_id):
 @bot.event
 async def on_ready():
     print(f'------------------------------------')
-    print(f'カレン完全版（タイムアウト延長・スレッド対応）起動！')
+    print(f'カレン完全版（リミッター解除・全対応モード）起動！')
     print(f'------------------------------------')
 
 @bot.event
@@ -141,7 +159,7 @@ async def on_message(message):
 
     if message.author.bot: return
     
-    # スレッド（Thread）の中でも反応できるように改良
+    # スレッド対応
     is_valid_channel = (message.channel.id in ALLOWED_CHANNELS)
     if not is_valid_channel and hasattr(message.channel, 'parent') and message.channel.parent:
         if message.channel.parent.id in ALLOWED_CHANNELS:
