@@ -56,7 +56,7 @@ def get_system_setting(channel_id):
 
 【制約（厳守！）】
 1. 1文は短めに、1行25文字以内、全体で1～3行程度（長くなりすぎないように）。
-2. 漢字や言葉選びで少しだけ知性を見せて（難しすぎない程度に）。
+2. **「世俗」のような硬い熟語や難しい言葉は禁止！ 普通の女子高生っぽく、親しみやすい言葉で話して。**
 
 【絶対に守るルール】
 1. 冒頭の「お兄ちゃん！」連呼は禁止。
@@ -96,11 +96,9 @@ Google検索は「ニュース」や「天気」など、聞かれたことに�
 """
     return base_setting + specific_setting + common_footer
 
-# ★改良版レスポンス取得関数（リトライ機能付き）
 async def get_gemini_response(prompt, channel_id):
     system_prompt = get_system_setting(channel_id)
 
-    # 安全フィルター解除設定
     safety_settings = [
         {"category": "HARM_CATEGORY_HARASSMENT", "threshold": "BLOCK_NONE"},
         {"category": "HARM_CATEGORY_HATE_SPEECH", "threshold": "BLOCK_NONE"},
@@ -108,47 +106,36 @@ async def get_gemini_response(prompt, channel_id):
         {"category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "BLOCK_NONE"}
     ]
 
-    # --- 1回目：検索ツール「あり」でチャレンジ ---
+    # --- 1回目：検索ツール「あり」 ---
     for model in MODEL_CANDIDATES:
         url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={GEMINI_API_KEY}"
-        
         payload = {
             "contents": [{"parts": [{"text": f"{system_prompt}\n内容：{prompt}"}]}],
-            "tools": [{"googleSearchRetrieval": {}}], # 検索ON
+            "tools": [{"googleSearchRetrieval": {}}],
             "safetySettings": safety_settings
         }
-        
         try:
-            # 検索時は長めに待つ(60秒)
             response = requests.post(url, json=payload, timeout=60, verify=False)
             res_data = response.json()
-            
             if response.status_code == 200 and 'candidates' in res_data and len(res_data['candidates']) > 0:
-                # 成功したら返す
                 if 'content' in res_data['candidates'][0]:
                     return res_data['candidates'][0]['content']['parts'][0]['text']
         except Exception:
-            pass # 失敗したら次のモデルへ、あるいは2周目へ
+            pass 
 
-    # --- 2回目：検索ツール「なし」でリトライ（これが救済措置！） ---
-    # 検索結果がエラー原因だった場合、検索なしなら喋れる可能性が高い
+    # --- 2回目：検索ツール「なし」でリトライ ---
     print("Retrying without search tools...")
     for model in MODEL_CANDIDATES:
         url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={GEMINI_API_KEY}"
-        
         payload = {
             "contents": [{"parts": [{"text": f"{system_prompt}\n内容：{prompt}"}]}],
-            # tools を外す！
             "safetySettings": safety_settings
         }
-        
         try:
             response = requests.post(url, json=payload, timeout=30, verify=False)
             res_data = response.json()
-            
             if response.status_code == 200 and 'candidates' in res_data and len(res_data['candidates']) > 0:
                 if 'content' in res_data['candidates'][0]:
-                    # 検索できなかった言い訳をちょこっと足してもいいけど、自然に返せればOK
                     return res_data['candidates'][0]['content']['parts'][0]['text']
         except Exception:
             continue
@@ -158,7 +145,7 @@ async def get_gemini_response(prompt, channel_id):
 @bot.event
 async def on_ready():
     print(f'------------------------------------')
-    print(f'カレン完全版（自動リトライ＆エラー報告機能）起動！')
+    print(f'カレン完全版（話し方修正済み）起動！')
     print(f'------------------------------------')
 
 @bot.event
@@ -167,12 +154,10 @@ async def on_message(message):
 
     if message.author.bot: return
     
-    # スレッド対応判定
     is_valid_channel = (message.channel.id in ALLOWED_CHANNELS)
     if not is_valid_channel and hasattr(message.channel, 'parent') and message.channel.parent:
         if message.channel.parent.id in ALLOWED_CHANNELS:
             is_valid_channel = True
-            
     if not is_valid_channel: return
 
     if message.content.startswith('!'):
@@ -230,11 +215,9 @@ async def on_message(message):
                 if is_mentioned: await message.reply(answer)
                 else: await message.channel.send(answer)
             else:
-                # ★ここが重要！万が一すべて失敗した場合、黙らずにエラーを伝える
                 error_msg = "……うぅ、ごめん。なんか頭が真っ白になっちゃった（エラー発生）。もう一回言ってくれる？"
                 if is_mentioned: await message.reply(error_msg)
                 else: await message.channel.send(error_msg)
-
         return
     
     await bot.process_commands(message)
