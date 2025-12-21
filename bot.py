@@ -11,7 +11,7 @@ import time
 
 # --- 状態管理用の変数 ---
 last_reply_time = {}
-is_summarizing = False  # ★要約中かどうかを記録する旗
+is_summarizing = False  # 要約中フラグ
 
 # --- Render生存確認用 ---
 app = Flask('')
@@ -26,43 +26,45 @@ def keep_alive():
     t = Thread(target=run)
     t.start()
 
-# --- ここからいつものBot設定 ---
+# --- Bot設定 ---
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 DISCORD_TOKEN = os.getenv('DISCORD_TOKEN')
 GEMINI_API_KEY = os.getenv('GEMINI_API_KEY')
 ALLOWED_CHANNELS = [1255505687807524928, 1251376400775254149, 1268434232028430348]
 
-MODEL_CANDIDATES = ["gemini-3-flash-preview", "gemini-3-flash", "gemini-2.5-flash", "gemini-2.5-flash-lite"]
+# 404対策済みモデルリスト
+MODEL_CANDIDATES = ["gemini-3-flash-preview", "gemini-2.5-flash", "gemini-2.5-flash-lite"]
 
 intents = discord.Intents.default()
 intents.message_content = True
 bot = commands.Bot(command_prefix="!", intents=intents)
 
-# 妹系カレンちゃん＋NIKKE専門家の設定（おねーちゃんリスト対応版）
+# ★ここが黄金比率！「生意気」だけど「愛がある」設定
 SYSTEM_SETTING = """
-あなたは生意気で甘えん坊な妹の「カレン」だよ。
-1行20文字以内、2行程度で短くお返事してね。
+あなたは少し生意気で素直になれない妹の「カレン」だよ。
+本当はお兄様（相手）のことが大好きだけど、恥ずかしくてつい強がっちゃう「ツンデレ」な態度をとってね。
+1行25文字以内、2-3行程度で短くお返事してね。
 
 【絶対に守るルール】
-1. 冒頭の「お兄ちゃん！」連呼は禁止。自然に会話を始めて。
-2. 1行20文字以内、合計2〜3行でスッキリお返事してね。
-3. 突き放すだけじゃなく、相手を気遣う言葉や、照れ隠しの言葉を必ず添えて。
+1. 冒頭の「お兄ちゃん！」連呼は禁止。
+2. 相手を突き放した後は、必ず優しくデレてフォローして。
+3. 最終的には相手を信頼していることが伝わるようにして。
 
 【呼び方のルール】
 1. 基本的には、相手の「表示名（名前）」を使って呼んでね。
 2. 女子は「おねーちゃん」ってたまに呼んでね。
 
 【コミュニティの女子メンバー】
-・わたんちゃ：わたんちょとも呼ばれている優しいおねーちゃんだよ
+・わたんちゃ：わたちゃんって呼んであげてね
 ・あみ：優しくておしゃれなおねーちゃんだよ
 ・富江：パワフルで頼れるおねーちゃんだよ
 ・マスリカ：頭のいいゲーム好きなおねーちゃんだよ
-・もこみん：アイドルのおねーちゃんだよ
+・もこみん：アイドルのおねーちゃんだよ。かわいいって褒めてあげて
 
 【NIKKEの知識】
 あなたは『勝利の女神：NIKKE』が大好き！
-特に押しキャラは”紅蓮”本当のおねーちゃんだと思っている。
+特に押しキャラは”紅蓮”おねーちゃん。
 """
 
 async def get_gemini_response(prompt):
@@ -86,7 +88,7 @@ async def get_gemini_response(prompt):
 @bot.event
 async def on_ready():
     print(f'------------------------------------')
-    print(f'カレン完全版（要約中お喋り停止機能付き）起動！')
+    print(f'カレン完全版（黄金比率ツンデレモード）起動！')
     print(f'------------------------------------')
 
 @bot.event
@@ -96,8 +98,17 @@ async def on_message(message):
     if message.author.bot: return
     if message.channel.id not in ALLOWED_CHANNELS: return
 
-    # 要約中はお休み
-    if is_summarizing and not message.content.startswith('!'):
+    # 1. コマンド処理
+    if message.content.startswith('!'):
+        await bot.process_commands(message)
+        return
+
+    # 画像（添付ファイル）がある、または中身が空っぽなら無視する
+    if message.attachments or not message.content:
+        return
+
+    # 2. 要約中は無視
+    if is_summarizing:
         return
 
     # 権限チェック
@@ -113,9 +124,6 @@ async def on_message(message):
     is_mentioned = bot.user.mentioned_in(message)
     is_lucky = random.random() < 0.1  # 10%の確率
 
-    # --- ここが修正ポイント！ ---
-    # 1. メンションされた場合 → お兄様ロールが必要
-    # 2. 10%の幸運（割り込み）→ 誰にでも反応！
     should_reply = (has_permission and is_mentioned) or is_lucky
 
     if should_reply:
@@ -123,10 +131,10 @@ async def on_message(message):
         async with message.channel.typing():
             context = []
             async for msg in message.channel.history(limit=5):
-                context.append(f"{msg.author.display_name}: {msg.content}")
+                if msg.content:
+                    context.append(f"{msg.author.display_name}: {msg.content}")
             history_text = "\n".join(reversed(context))
             
-            # 割り込みの時は「お兄ちゃん」じゃなくて名前で呼ぶように促す
             prompt = f"会話履歴:\n{history_text}\n\n【指示】「{message.author.display_name}」にお返事して。"
             answer = await get_gemini_response(prompt)
             
@@ -134,7 +142,7 @@ async def on_message(message):
                 if is_mentioned: await message.reply(answer)
                 else: await message.channel.send(answer)
         return
-
+    
     await bot.process_commands(message)
 
 @bot.command()
@@ -143,13 +151,14 @@ async def 要約(ctx, limit: int = 30):
     
     ALLOWED_ROLE_NAME = "カレンのお兄様"
     has_role = any(role.name == ALLOWED_ROLE_NAME for role in ctx.author.roles)
+    
     if not has_role:
-        await ctx.send("お兄様以外の命令は聞けないもん！")
+        # ★ここも変更：ちょっと強気だけど、拒絶はしない絶妙なライン！
+        await ctx.send("\n要約はお兄様だけの特権なんだからね！ でも、普通のお喋りなら相手してあげる！")
         return
 
-    # ★要約開始：旗を立ててお喋りを止める
     is_summarizing = True
-    await ctx.send(f"了解です、お兄様。読み終えるまでちょっと待ってね！")
+    await ctx.send(f"もう、しょうがないなぁ……。お兄様がどうしてもって言うなら、まとめてあげるね！")
     
     try:
         async with ctx.typing():
@@ -171,26 +180,9 @@ async def 要約(ctx, limit: int = 30):
                 if len(summary) > 1900: summary = summary[:1900] + "..."
                 await ctx.send(f"**【カレンの報告書】**\n{summary}")
             else:
-                await ctx.send("ごめんね、うまくまとめられなかったみたい。")
+                await ctx.send("うぅ……ごめん。一生懸命やったんだけど、失敗しちゃった……。")
     finally:
-        # ★終了：旗を下ろしてお喋り再開
         is_summarizing = False
 
 keep_alive()
 bot.run(DISCORD_TOKEN)
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
