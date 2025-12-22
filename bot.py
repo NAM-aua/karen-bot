@@ -38,11 +38,12 @@ ALLOWED_CHANNELS = [NIKKE_CHANNEL_ID, 1251376400775254149, 1268434232028430348]
 
 # ★モデルリスト（レート制限対策済み）
 MODEL_CANDIDATES = [
-    "gemini-2.5-flash-lite",    # 最軽量・最速（レート制限対策！）
-    "gemini-2.5-flash",         # 安定版フラッシュ
-    "gemini-3-flash-preview",   # 最新世代フラッシュ
     "gemini-2.5-pro",           # 高度な思考モデル
+    "gemini-2.5-flash",         # 安定版フラッシュ
     "gemini-3-pro-preview"      # 最強モデル
+    "gemini-3-flash-preview",   # 最新世代フラッシュ
+    "gemini-2.5-flash-lite",    # 最軽量・最速（レート制限対策！）
+
 ]
 
 intents = discord.Intents.default()
@@ -274,3 +275,4 @@ async def 要約(ctx, limit: int = 30):
 
 keep_alive()
 bot.run(DISCORD_TOKEN)
+
