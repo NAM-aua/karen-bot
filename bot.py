@@ -92,4 +92,62 @@ async def on_message(message):
     if cid not in ALLOWED_CHANNELS and pid not in ALLOWED_CHANNELS: return
 
     if message.content.startswith('!'): await bot.process_commands(message); return
-    if not message.content
+    if not message.content and not message.attachments: return
+    if is_summarizing: return
+
+    # 権限＆確率チェック
+    has_role = any(r.name == "カレンのお兄様" for r in message.author.roles)
+    is_mentioned = bot.user.mentioned_in(message)
+    if not ((has_role and is_mentioned) or random.random() < 0.1): return
+    
+    # 連投防止
+    if time.time() - last_reply_time.get(cid, 0) < 15: return
+    last_reply_time[cid] = time.time()
+
+    async with message.channel.typing():
+        # 日時情報の取得
+        JST = timezone(timedelta(hours=+9), 'JST')
+        now = datetime.now(JST)
+        date_info = f"【現在: {now.strftime('%m/%d')} {['月','火','水','木','金','土','日'][now.weekday()]}曜 {now.strftime('%H:%M')}】"
+
+        history = [f"{m.author.display_name}: {m.content}" + (" (画像)" if m.attachments else "") 
+                   async for m in message.channel.history(limit=10)]
+        
+        prompt = (f"{date_info}\n履歴:\n" + "\n".join(reversed(history)) + 
+                  f"\n\n指示: 履歴を踏まえ、妹カレンとして「{message.author.display_name}」に返信して。"
+                  f"「〇〇に話しかけて」と言われたらその人に向けて話して。")
+        
+        target_id = pid if pid in ALLOWED_CHANNELS else cid
+        answer = await get_gemini_response(prompt, target_id, CHAT_MODELS)
+        
+        if answer:
+            if is_mentioned: await message.reply(answer)
+            else: await message.channel.send(answer)
+        else:
+            await message.channel.send("……ごめん、頭真っ白になっちゃった（エラー）。もう一回言って？")
+
+@bot.command()
+async def 要約(ctx, limit: int = 30):
+    global is_summarizing
+    if not any(r.name == "カレンのお兄様" for r in ctx.author.roles): return
+    
+    is_summarizing = True
+    await ctx.send("しょうがないなぁ。まとめてあげる！")
+    try:
+        async with ctx.typing():
+            msgs = [f"{m.author.display_name}: {m.content}" async for m in ctx.channel.history(limit=limit)
+                    if m.author != bot.user and not m.content.startswith('!')]
+            if not msgs: await ctx.send("メッセージがないよ！"); return
+            
+            prompt = (f"以下の会話を読み、カレンの口調で要約報告して。\n"
+                      f"必ず【話題】【発言者】の項目を作って中身を詳しく書くこと。\n"
+                      f"対象:\n" + "\n".join(reversed(msgs)))
+            
+            target_id = ctx.channel.parent.id if hasattr(ctx.channel, 'parent') and ctx.channel.parent else ctx.channel.id
+            summary = await get_gemini_response(prompt, target_id, SUMMARY_MODELS) # ここは賢いモデルで！
+            
+            await ctx.send(f"**【カレンの報告書】**\n{summary}" if summary else "ごめん、失敗しちゃった…。")
+    finally: is_summarizing = False
+
+keep_alive()
+bot.run(DISCORD_TOKEN)
