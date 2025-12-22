@@ -9,6 +9,7 @@ from flask import Flask
 from threading import Thread
 import time
 from datetime import datetime, timedelta, timezone
+import asyncio # ★非同期処理用に追加
 
 # --- 状態管理 ---
 last_reply_time = {}
@@ -29,15 +30,20 @@ NIKKE_CHANNEL_ID = 1255505687807524928
 ALLOWED_CHANNELS = [NIKKE_CHANNEL_ID, 1251376400775254149, 1268434232028430348]
 
 # --- モデル設定 ---
-# 普段は軽量モデル、要約は賢いモデルで使い分け
-CHAT_MODELS = ["gemini-2.5-flash-lite", "gemini-2.5-flash", "gemini-3-flash-preview"]
-SUMMARY_MODELS = ["gemini-2.5-pro", "gemini-3-pro-preview", "gemini-2.5-flash"]
+# ★重要修正：最後に「gemini-1.5-flash」を追加！
+# 2.5や3.0が制限(RPD 20)で死んでも、1.5(RPD 1500)が必ず拾ってくれます。
+CHAT_MODELS = [
+    "gemini-2.5-flash-lite", 
+    "gemini-2.5-flash", 
+    "gemini-3-flash-preview", 
+    "gemini-1.5-flash" # ←★これが救世主です
+]
+SUMMARY_MODELS = ["gemini-2.5-pro", "gemini-3-pro-preview", "gemini-1.5-flash"]
 
 intents = discord.Intents.default()
 intents.message_content = True
 bot = commands.Bot(command_prefix="!", intents=intents)
 
-# ★ここを大幅にスリム化！要点だけを叩き込む
 def get_system_setting(channel_id):
     base = """
 あなたは生意気な妹「カレン」。素直になれないツンデレだけど、相手のことは大好き。
@@ -51,6 +57,12 @@ def get_system_setting(channel_id):
         return base + "\n※今は『NIKKE』の話をする場所だよ。紅蓮おねーちゃん推しでいこう！"
     return base + "\n※今は日常会話の場所だよ。"
 
+# ★同期的なrequestsを非同期で実行するラッパー関数
+async def fetch_gemini(url, payload):
+    loop = asyncio.get_running_loop()
+    # run_in_executorでBotを止めずに裏で通信させる
+    return await loop.run_in_executor(None, lambda: requests.post(url, json=payload, timeout=60, verify=False))
+
 async def get_gemini_response(prompt, channel_id, model_list=CHAT_MODELS):
     system_prompt = get_system_setting(channel_id)
     safety = [{"category": f"HARM_CATEGORY_{c}", "threshold": "BLOCK_NONE"} 
@@ -62,31 +74,41 @@ async def get_gemini_response(prompt, channel_id, model_list=CHAT_MODELS):
             url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={GEMINI_API_KEY}"
             data = {"contents": [{"parts": [{"text": f"{system_prompt}\n{prompt}"}]}], 
                     "tools": [{"googleSearchRetrieval": {}}], "safetySettings": safety}
-            res = requests.post(url, json=data, timeout=60, verify=False)
+            
+            # ★ここを変更！非同期呼び出し
+            res = await fetch_gemini(url, data)
+            
             if res.status_code == 200 and 'candidates' in res.json():
                 return res.json()['candidates'][0]['content']['parts'][0]['text']
-        except: pass
+            elif res.status_code == 429:
+                print(f"Model {model} limit hit (429). Skipping...") # 制限なら次へ
+        except Exception as e:
+            print(f"Error with {model}: {e}")
+            pass
 
-    # 2. 検索なしでリトライ（軽量化）
+    # 2. 検索なしでリトライ
     print("Retry without search...")
     for model in model_list:
         try:
+            url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={GEMINI_API_KEY}"
             data = {"contents": [{"parts": [{"text": f"{system_prompt}\n{prompt}"}]}], "safetySettings": safety}
-            res = requests.post(url, json=data, timeout=30, verify=False)
+            
+            # ★ここも変更
+            res = await fetch_gemini(url, data)
+            
             if res.status_code == 200 and 'candidates' in res.json():
                 return res.json()['candidates'][0]['content']['parts'][0]['text']
         except: continue
     return None
 
 @bot.event
-async def on_ready(): print('カレン（軽量シンプル版）起動！')
+async def on_ready(): print('カレン（スタミナ無限＆安定化版）起動！')
 
 @bot.event
 async def on_message(message):
     global last_reply_time
     if message.author.bot: return
     
-    # チャンネル判定（スレッド対応）
     cid = message.channel.id
     pid = message.channel.parent.id if hasattr(message.channel, 'parent') and message.channel.parent else 0
     if cid not in ALLOWED_CHANNELS and pid not in ALLOWED_CHANNELS: return
@@ -95,17 +117,14 @@ async def on_message(message):
     if not message.content and not message.attachments: return
     if is_summarizing: return
 
-    # 権限＆確率チェック
     has_role = any(r.name == "カレンのお兄様" for r in message.author.roles)
     is_mentioned = bot.user.mentioned_in(message)
     if not ((has_role and is_mentioned) or random.random() < 0.1): return
     
-    # 連投防止
     if time.time() - last_reply_time.get(cid, 0) < 15: return
     last_reply_time[cid] = time.time()
 
     async with message.channel.typing():
-        # 日時情報の取得
         JST = timezone(timedelta(hours=+9), 'JST')
         now = datetime.now(JST)
         date_info = f"【現在: {now.strftime('%m/%d')} {['月','火','水','木','金','土','日'][now.weekday()]}曜 {now.strftime('%H:%M')}】"
@@ -144,7 +163,7 @@ async def 要約(ctx, limit: int = 30):
                       f"対象:\n" + "\n".join(reversed(msgs)))
             
             target_id = ctx.channel.parent.id if hasattr(ctx.channel, 'parent') and ctx.channel.parent else ctx.channel.id
-            summary = await get_gemini_response(prompt, target_id, SUMMARY_MODELS) # ここは賢いモデルで！
+            summary = await get_gemini_response(prompt, target_id, SUMMARY_MODELS)
             
             await ctx.send(f"**【カレンの報告書】**\n{summary}" if summary else "ごめん、失敗しちゃった…。")
     finally: is_summarizing = False
