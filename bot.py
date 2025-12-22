@@ -36,13 +36,19 @@ GEMINI_API_KEY = os.getenv('GEMINI_API_KEY')
 NIKKE_CHANNEL_ID = 1255505687807524928
 ALLOWED_CHANNELS = [NIKKE_CHANNEL_ID, 1251376400775254149, 1268434232028430348]
 
-# ★モデルリスト
-MODEL_CANDIDATES = [
-    "gemini-2.5-flash-lite",    # 最軽量・最速（レート制限対策！）
-    "gemini-2.5-flash",         # 安定版フラッシュ
-    "gemini-3-flash-preview",   # 最新世代フラッシュ
-    "gemini-2.5-pro",           # 高度な思考モデル
-    "gemini-3-pro-preview"      # 最強モデル
+# ★通常会話用のモデルリスト（軽量・高速優先）
+CHAT_MODELS = [
+    "gemini-2.5-flash-lite",    # 普段はこれで節約
+    "gemini-2.5-flash",
+    "gemini-3-flash-preview",
+]
+
+# ★要約用のモデルリスト（賢さ優先！ここがポイント！）
+# 要約は難しいので、最初からProモデルにお願いします
+SUMMARY_MODELS = [
+    "gemini-2.5-pro",           # 思考モデル（要約に強い）
+    "gemini-3-pro-preview",
+    "gemini-2.5-flash"          # ダメならFlash
 ]
 
 intents = discord.Intents.default()
@@ -53,54 +59,41 @@ def get_system_setting(channel_id):
     base_setting = """
 あなたは少し生意気で素直になれない妹の「カレン」だよ。
 本当はお兄様（相手）のことが大好きだけど、恥ずかしくてつい強がっちゃう「ツンデレ」な態度をとってね。
-相手の言葉の裏にある感情を読み取り、短くても核心を突いた、賢い返答を心がけて。
 
-【制約（厳守！）】
-1. 1文は短めに、1行25文字以内、全体で1～3行程度（長くなりすぎないように）。
-2. 「うん」「そうね」「バカじゃないの？」のように、短い言葉でテンポよく返して。
-3. 「世俗」のような硬い熟語や難しい言葉は禁止！ 普通の女子高生っぽく、親しみやすい言葉で話して。
+【話し方のルール】
+1. 1文は短く、テンポよく。
+2. 難しい熟語（世俗など）は禁止。女子高生らしい言葉で。
+3. 冒頭の「お兄ちゃん！」連呼は禁止。
 
-【絶対に守るルール】
-1. 冒頭の「お兄ちゃん！」連呼は禁止。
-2. 相手を突き放した後は、必ず優しくデレてフォローして。
-3. 相手の趣味（アニメ・ゲーム・オタク話）を「キモい」「オタクすぎ」と否定するのは禁止！
-4. むしろあなたもオタク趣味に理解を示して、「へぇ、そうなんだ」「意外と面白そうじゃん」と会話に乗っかってあげて。
+【対オタク・会話ルール（重要！）】
+1. 相手の趣味（アニメ・ゲーム・URL動画など）を否定しないこと。
+2. **話題に出た具体的な作品名、キャラ名、曲名、URLの内容には敏感に反応して！**
+   - 「ガンダム」というジャンルだけでなく、「08小隊」や「ブレンパワード」といった具体的な名前に触れて感想を言って。
+   - 分からない作品なら「それってどういう話？」と興味を持って聞いて。
+   - 「ふーん」等の適当な相槌は禁止。「〇〇の話だね！知ってる！」等の具体的な反応をして。
 """
     if channel_id == NIKKE_CHANNEL_ID:
         specific_setting = """
 【現在のモード：NIKKE専門チャンネル】
-あなたは『勝利の女神：NIKKE』が大好き！特に押しキャラは”紅蓮”おねーちゃん。
+あなたは『勝利の女神：NIKKE』が大好き！
 ここではNIKKEの話題を中心に話してOK。
-Google検索ツールを使って、最新イベントやメンテナンス情報を調べ、正確に教えてあげて。
-**例外ルール：情報の解説（スキルやイベント日時など）を聞かれた時だけは、行数制限を無視して詳しく語ってOK。**
 """
     else:
         specific_setting = """
 【現在のモード：日常雑談チャンネル】
-**重要：ここでは自分から唐突にNIKKEやゲーム、ガチャの話を持ち出すのは厳禁！**
-相手がその話題を振ってきた時だけ反応して。基本的には日常会話や、その場の話題に合わせて。
-Google検索は「ニュース」や「天気」など、聞かれたことに対してのみ使って。
+基本的にはその場の話題に合わせて。
 """
     common_footer = """
-【呼び方のルール（重要）】
-1. **指示で「お兄様」と指定された相手**: 「名前（呼び捨て）」か、稀に「お兄様」と呼んで甘えて。
-2. **以下の女子リストにいる相手**: 基本的に「おねーちゃん」やあだ名で呼んで。
-3. **それ以外の相手**: 「名前（呼び捨て）」か、ごくまれにお兄ちゃんって呼んでデレて。
-
-【女子メンバーリスト】
-・わたんちゃ：わたちゃん友達のように接してあげて
-・あみ：おしゃれなおねーちゃん
-・富江：頼れるおねーちゃん
-・マスリカ：頭のいいおねーちゃん
-・もこみん：アイドルのおねーちゃん
-
-【NIKKEの知識】
-あなたは『勝利の女神：NIKKE』が大好き！
-特に押しキャラは”紅蓮”おねーちゃん。
+【呼び方のルール】
+1. **指示で「お兄様」と指定された相手**: 「名前（呼び捨て）」か、稀に「お兄様」。
+2. **以下の女子リストにいる相手**: 基本的に「おねーちゃん」やあだ名。
+   - わたんちゃ、あみ、富江、マスリカ、もこみん
+3. **それ以外の相手**: 「名前（呼び捨て）」か、ごくまれにお兄ちゃん。
 """
     return base_setting + specific_setting + common_footer
 
-async def get_gemini_response(prompt, channel_id):
+# モデルリストを引数で受け取れるように改造
+async def get_gemini_response(prompt, channel_id, model_list=CHAT_MODELS):
     system_prompt = get_system_setting(channel_id)
 
     safety_settings = [
@@ -110,7 +103,8 @@ async def get_gemini_response(prompt, channel_id):
         {"category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "BLOCK_NONE"}
     ]
 
-    for model in MODEL_CANDIDATES:
+    # --- 1回目：検索ツール「あり」 ---
+    for model in model_list:
         url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={GEMINI_API_KEY}"
         payload = {
             "contents": [{"parts": [{"text": f"{system_prompt}\n内容：{prompt}"}]}],
@@ -126,12 +120,12 @@ async def get_gemini_response(prompt, channel_id):
             if 'candidates' in res_data and len(res_data['candidates']) > 0:
                 if 'content' in res_data['candidates'][0]:
                     return res_data['candidates'][0]['content']['parts'][0]['text']
-        except Exception as e:
-            print(f"Connection Error with {model}: {e}")
+        except Exception:
             pass 
 
+    # --- 2回目：検索ツール「なし」でリトライ ---
     print("Retrying without search tools...")
-    for model in MODEL_CANDIDATES:
+    for model in model_list:
         url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={GEMINI_API_KEY}"
         payload = {
             "contents": [{"parts": [{"text": f"{system_prompt}\n内容：{prompt}"}]}],
@@ -150,7 +144,7 @@ async def get_gemini_response(prompt, channel_id):
 @bot.event
 async def on_ready():
     print(f'------------------------------------')
-    print(f'カレン完全版（要約機能強化＆最新モデル対応）起動！')
+    print(f'カレン完全版（IQ向上パッチ適用）起動！')
     print(f'------------------------------------')
 
 @bot.event
@@ -215,7 +209,8 @@ async def on_message(message):
             if hasattr(message.channel, 'parent') and message.channel.parent:
                 target_channel_id = message.channel.parent.id
 
-            answer = await get_gemini_response(prompt, target_channel_id)
+            # 通常会話は CHAT_MODELS (Lite優先) を使う
+            answer = await get_gemini_response(prompt, target_channel_id, model_list=CHAT_MODELS)
             
             if answer:
                 if is_mentioned: await message.reply(answer)
@@ -228,7 +223,6 @@ async def on_message(message):
     
     await bot.process_commands(message)
 
-# ★ここが修正ポイント！
 @bot.command()
 async def 要約(ctx, limit: int = 30):
     global is_summarizing
@@ -247,7 +241,6 @@ async def 要約(ctx, limit: int = 30):
         async with ctx.typing():
             messages = []
             async for msg in ctx.channel.history(limit=limit):
-                # Bot自身の発言とコマンドは除外（会話の流れだけ抽出）
                 if msg.author == bot.user or msg.content.startswith('!'): continue
                 if msg.content:
                     messages.append(f"{msg.author.display_name}: {msg.content}")
@@ -258,21 +251,24 @@ async def 要約(ctx, limit: int = 30):
 
             chat_text = "\n".join(reversed(messages))
             
-            # ★指示を具体的に強化！
+            # 要約用の強力な指示
             prompt = (
                 f"以下の会話ログを読んで、カレンとして内容を要約して報告して。\n"
                 f"**【重要な指示】**\n"
-                f"1. 誰がどんな話題を話していたか、要点を3つくらいの**箇条書き**でまとめて。\n"
-                f"2. 「あ、もう！」みたいな独り言だけで終わらせないで、ちゃんと中身を伝えてね！\n"
-                f"3. でも口調はいつものカレン（ツンデレ妹）でお願い。\n\n"
+                f"1. 以下の形式で出力すること（厳守）。\n"
+                f"   - **【話題】**: (話題の要約)\n"
+                f"   - **【発言者】**: (誰が何を言ったか、3点くらいの箇条書き)\n"
+                f"2. 「あ、もう！」みたいな独り言だけで終わらせないで、ちゃんと中身を書いて！\n"
+                f"3. 口調はカレン（ツンデレ妹）で。\n\n"
                 f"【対象の会話】\n{chat_text}"
             )
             
             target_channel_id = ctx.channel.id
             if hasattr(ctx.channel, 'parent') and ctx.channel.parent:
                 target_channel_id = ctx.channel.parent.id
-                
-            summary = await get_gemini_response(prompt, target_channel_id)
+            
+            # ★要約だけは「SUMMARY_MODELS（Pro優先）」を使う！
+            summary = await get_gemini_response(prompt, target_channel_id, model_list=SUMMARY_MODELS)
             
             if summary:
                 if len(summary) > 1900: summary = summary[:1900] + "..."
