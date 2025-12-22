@@ -8,6 +8,7 @@ import os
 from flask import Flask
 from threading import Thread
 import time
+from datetime import datetime, timedelta, timezone # ★時計機能用に追加
 
 # --- 状態管理用の変数 ---
 last_reply_time = {}
@@ -36,19 +37,17 @@ GEMINI_API_KEY = os.getenv('GEMINI_API_KEY')
 NIKKE_CHANNEL_ID = 1255505687807524928
 ALLOWED_CHANNELS = [NIKKE_CHANNEL_ID, 1251376400775254149, 1268434232028430348]
 
-# ★通常会話用のモデルリスト（軽量・高速優先）
+# ★モデルリスト
 CHAT_MODELS = [
-    "gemini-2.5-flash-lite",    # 普段はこれで節約
+    "gemini-2.5-flash-lite",    # 普段使い
     "gemini-2.5-flash",
     "gemini-3-flash-preview",
 ]
 
-# ★要約用のモデルリスト（賢さ優先！ここがポイント！）
-# 要約は難しいので、最初からProモデルにお願いします
 SUMMARY_MODELS = [
-    "gemini-2.5-pro",           # 思考モデル（要約に強い）
+    "gemini-2.5-pro",           # 要約用
     "gemini-3-pro-preview",
-    "gemini-2.5-flash"          # ダメならFlash
+    "gemini-2.5-flash"
 ]
 
 intents = discord.Intents.default()
@@ -62,15 +61,16 @@ def get_system_setting(channel_id):
 
 【話し方のルール】
 1. 1文は短く、テンポよく。
-2. 難しい熟語（世俗など）は禁止。女子高生らしい言葉で。
+2. 難しい熟語は禁止。女子高生らしい言葉で。
 3. 冒頭の「お兄ちゃん！」連呼は禁止。
 
-【対オタク・会話ルール（重要！）】
-1. 相手の趣味（アニメ・ゲーム・URL動画など）を否定しないこと。
-2. **話題に出た具体的な作品名、キャラ名、曲名、URLの内容には敏感に反応して！**
-   - 「ガンダム」というジャンルだけでなく、「08小隊」や「ブレンパワード」といった具体的な名前に触れて感想を言って。
-   - 分からない作品なら「それってどういう話？」と興味を持って聞いて。
-   - 「ふーん」等の適当な相槌は禁止。「〇〇の話だね！知ってる！」等の具体的な反応をして。
+【対オタク・会話ルール（最重要！）】
+1. **URL（特にYouTube）が貼られたら、必ず検索ツールを使って「動画のタイトル」や「内容」を確認すること！**
+   - URLだけを見て「動画だね」と知ったかぶりをするのは厳禁。
+   - 「〇〇（具体的な作品名）の動画じゃん！」「この曲懐かしい！」と、中身に具体的に触れて感想を言って。
+   - 全く知らない作品なら「これ何の動画？教えて？」と聞いて。
+   - 「ふーん、ガンダムね」みたいな適当な返しは禁止！
+2. 相手の趣味を否定しない。「キモい」ではなく「熱心だね」「楽しそう」と理解を示して。
 """
     if channel_id == NIKKE_CHANNEL_ID:
         specific_setting = """
@@ -92,7 +92,6 @@ def get_system_setting(channel_id):
 """
     return base_setting + specific_setting + common_footer
 
-# モデルリストを引数で受け取れるように改造
 async def get_gemini_response(prompt, channel_id, model_list=CHAT_MODELS):
     system_prompt = get_system_setting(channel_id)
 
@@ -103,12 +102,11 @@ async def get_gemini_response(prompt, channel_id, model_list=CHAT_MODELS):
         {"category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "BLOCK_NONE"}
     ]
 
-    # --- 1回目：検索ツール「あり」 ---
     for model in model_list:
         url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={GEMINI_API_KEY}"
         payload = {
             "contents": [{"parts": [{"text": f"{system_prompt}\n内容：{prompt}"}]}],
-            "tools": [{"googleSearchRetrieval": {}}],
+            "tools": [{"googleSearchRetrieval": {}}], # 検索ON
             "safetySettings": safety_settings
         }
         try:
@@ -123,7 +121,6 @@ async def get_gemini_response(prompt, channel_id, model_list=CHAT_MODELS):
         except Exception:
             pass 
 
-    # --- 2回目：検索ツール「なし」でリトライ ---
     print("Retrying without search tools...")
     for model in model_list:
         url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={GEMINI_API_KEY}"
@@ -144,7 +141,7 @@ async def get_gemini_response(prompt, channel_id, model_list=CHAT_MODELS):
 @bot.event
 async def on_ready():
     print(f'------------------------------------')
-    print(f'カレン完全版（IQ向上パッチ適用）起動！')
+    print(f'カレン完全版（時計機能＆URL解析強化）起動！')
     print(f'------------------------------------')
 
 @bot.event
@@ -197,11 +194,21 @@ async def on_message(message):
             
             user_status = "この相手はルール1にある『お兄様と指定された相手』です。" if has_permission else "この相手はルール3にある『それ以外の相手』です。"
 
+            # ★ここが新機能！日本時間を取得して曜日を計算
+            JST = timezone(timedelta(hours=+9), 'JST')
+            now = datetime.now(JST)
+            weekdays = ["月", "火", "水", "木", "金", "土", "日"]
+            date_str = f"{now.strftime('%Y年%m月%d日')}（{weekdays[now.weekday()]}曜日） {now.strftime('%H:%M')}"
+
+            # プロンプトに日時情報を注入
             prompt = (
+                f"【現在の状況】\n"
+                f"現在日時: {date_str}\n"
+                f"（平日か休日か、昼か夜かを考慮して発言して。平日昼間なら学校や仕事の話題など）\n\n"
                 f"会話履歴:\n{history_text}\n\n"
                 f"【指示】履歴にある「自分の過去の発言」の流れも踏まえて、妹のカレンとしてお返事して。\n"
                 f"基本的には「{message.author.display_name}」への返信だけど、もし「〇〇に話しかけて」と指示された場合は、その指示に従って対象の相手に話しかけて。\n"
-                f"質問内容が最新情報に関わる場合は、提供された検索ツールを使って調べてから答えて。\n"
+                f"**質問内容が最新情報に関わる場合や、URLが含まれている場合は、必ず提供された検索ツールを使って調べてから答えて。**\n"
                 f"**重要：{user_status}**"
             )
             
@@ -209,7 +216,6 @@ async def on_message(message):
             if hasattr(message.channel, 'parent') and message.channel.parent:
                 target_channel_id = message.channel.parent.id
 
-            # 通常会話は CHAT_MODELS (Lite優先) を使う
             answer = await get_gemini_response(prompt, target_channel_id, model_list=CHAT_MODELS)
             
             if answer:
@@ -251,7 +257,6 @@ async def 要約(ctx, limit: int = 30):
 
             chat_text = "\n".join(reversed(messages))
             
-            # 要約用の強力な指示
             prompt = (
                 f"以下の会話ログを読んで、カレンとして内容を要約して報告して。\n"
                 f"**【重要な指示】**\n"
@@ -267,7 +272,6 @@ async def 要約(ctx, limit: int = 30):
             if hasattr(ctx.channel, 'parent') and ctx.channel.parent:
                 target_channel_id = ctx.channel.parent.id
             
-            # ★要約だけは「SUMMARY_MODELS（Pro優先）」を使う！
             summary = await get_gemini_response(prompt, target_channel_id, model_list=SUMMARY_MODELS)
             
             if summary:
