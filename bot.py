@@ -36,14 +36,13 @@ GEMINI_API_KEY = os.getenv('GEMINI_API_KEY')
 NIKKE_CHANNEL_ID = 1255505687807524928
 ALLOWED_CHANNELS = [NIKKE_CHANNEL_ID, 1251376400775254149, 1268434232028430348]
 
-# ★モデルリスト（レート制限対策済み）
+# ★モデルリスト
 MODEL_CANDIDATES = [
-    "gemini-2.5-pro",           # 高度な思考モデル
-    "gemini-2.5-flash",         # 安定版フラッシュ
-    "gemini-3-pro-preview"      # 最強モデル
-    "gemini-3-flash-preview",   # 最新世代フラッシュ
     "gemini-2.5-flash-lite",    # 最軽量・最速（レート制限対策！）
-
+    "gemini-2.5-flash",         # 安定版フラッシュ
+    "gemini-3-flash-preview",   # 最新世代フラッシュ
+    "gemini-2.5-pro",           # 高度な思考モデル
+    "gemini-3-pro-preview"      # 最強モデル
 ]
 
 intents = discord.Intents.default()
@@ -151,7 +150,7 @@ async def get_gemini_response(prompt, channel_id):
 @bot.event
 async def on_ready():
     print(f'------------------------------------')
-    print(f'カレン完全版（指示切り替え対応・制限対策済み）起動！')
+    print(f'カレン完全版（要約機能強化＆最新モデル対応）起動！')
     print(f'------------------------------------')
 
 @bot.event
@@ -204,7 +203,6 @@ async def on_message(message):
             
             user_status = "この相手はルール1にある『お兄様と指定された相手』です。" if has_permission else "この相手はルール3にある『それ以外の相手』です。"
 
-            # ★ここを変更！指示に応じて話しかける相手を変えるロジックを追加
             prompt = (
                 f"会話履歴:\n{history_text}\n\n"
                 f"【指示】履歴にある「自分の過去の発言」の流れも踏まえて、妹のカレンとしてお返事して。\n"
@@ -230,6 +228,7 @@ async def on_message(message):
     
     await bot.process_commands(message)
 
+# ★ここが修正ポイント！
 @bot.command()
 async def 要約(ctx, limit: int = 30):
     global is_summarizing
@@ -248,6 +247,7 @@ async def 要約(ctx, limit: int = 30):
         async with ctx.typing():
             messages = []
             async for msg in ctx.channel.history(limit=limit):
+                # Bot自身の発言とコマンドは除外（会話の流れだけ抽出）
                 if msg.author == bot.user or msg.content.startswith('!'): continue
                 if msg.content:
                     messages.append(f"{msg.author.display_name}: {msg.content}")
@@ -257,7 +257,16 @@ async def 要約(ctx, limit: int = 30):
                 return
 
             chat_text = "\n".join(reversed(messages))
-            prompt = f"以下の会話をカレンとして可愛く、かつ要点を押さえて賢く要約して！:\n{chat_text}"
+            
+            # ★指示を具体的に強化！
+            prompt = (
+                f"以下の会話ログを読んで、カレンとして内容を要約して報告して。\n"
+                f"**【重要な指示】**\n"
+                f"1. 誰がどんな話題を話していたか、要点を3つくらいの**箇条書き**でまとめて。\n"
+                f"2. 「あ、もう！」みたいな独り言だけで終わらせないで、ちゃんと中身を伝えてね！\n"
+                f"3. でも口調はいつものカレン（ツンデレ妹）でお願い。\n\n"
+                f"【対象の会話】\n{chat_text}"
+            )
             
             target_channel_id = ctx.channel.id
             if hasattr(ctx.channel, 'parent') and ctx.channel.parent:
@@ -275,4 +284,3 @@ async def 要約(ctx, limit: int = 30):
 
 keep_alive()
 bot.run(DISCORD_TOKEN)
-
