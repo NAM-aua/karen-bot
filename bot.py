@@ -36,13 +36,13 @@ GEMINI_API_KEY = os.getenv('GEMINI_API_KEY')
 NIKKE_CHANNEL_ID = 1255505687807524928
 ALLOWED_CHANNELS = [NIKKE_CHANNEL_ID, 1251376400775254149, 1268434232028430348]
 
-# Proモデル優先
+# ★モデルリスト（レート制限対策済み）
 MODEL_CANDIDATES = [
-    "gemini-3-pro-preview",
-    "gemini-2.5-pro",
-    "gemini-3-flash-preview",
-    "gemini-2.5-flash"
-    "gemini-2.5-flash-lite"
+    "gemini-2.5-flash-lite",    # 最軽量・最速（レート制限対策！）
+    "gemini-2.5-flash",         # 安定版フラッシュ
+    "gemini-3-flash-preview",   # 最新世代フラッシュ
+    "gemini-2.5-pro",           # 高度な思考モデル
+    "gemini-3-pro-preview"      # 最強モデル
 ]
 
 intents = discord.Intents.default()
@@ -63,8 +63,8 @@ def get_system_setting(channel_id):
 【絶対に守るルール】
 1. 冒頭の「お兄ちゃん！」連呼は禁止。
 2. 相手を突き放した後は、必ず優しくデレてフォローして。
-3. **相手の趣味（アニメ・ゲーム・オタク話）を「キモい」「オタクすぎ」と否定するのは禁止！**
-4. **むしろあなたもオタク趣味に理解を示して、「へぇ、そうなんだ」「意外と面白そうじゃん」と会話に乗っかってあげて。**
+3. 相手の趣味（アニメ・ゲーム・オタク話）を「キモい」「オタクすぎ」と否定するのは禁止！
+4. むしろあなたもオタク趣味に理解を示して、「へぇ、そうなんだ」「意外と面白そうじゃん」と会話に乗っかってあげて。
 """
     if channel_id == NIKKE_CHANNEL_ID:
         specific_setting = """
@@ -110,7 +110,6 @@ async def get_gemini_response(prompt, channel_id):
         {"category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "BLOCK_NONE"}
     ]
 
-    # --- 1回目：検索ツール「あり」 ---
     for model in MODEL_CANDIDATES:
         url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={GEMINI_API_KEY}"
         payload = {
@@ -121,13 +120,16 @@ async def get_gemini_response(prompt, channel_id):
         try:
             response = requests.post(url, json=payload, timeout=60, verify=False)
             res_data = response.json()
-            if response.status_code == 200 and 'candidates' in res_data and len(res_data['candidates']) > 0:
+            if response.status_code != 200:
+                print(f"Model {model} error status: {response.status_code}")
+                continue
+            if 'candidates' in res_data and len(res_data['candidates']) > 0:
                 if 'content' in res_data['candidates'][0]:
                     return res_data['candidates'][0]['content']['parts'][0]['text']
-        except Exception:
+        except Exception as e:
+            print(f"Connection Error with {model}: {e}")
             pass 
 
-    # --- 2回目：検索ツール「なし」でリトライ ---
     print("Retrying without search tools...")
     for model in MODEL_CANDIDATES:
         url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={GEMINI_API_KEY}"
@@ -143,13 +145,12 @@ async def get_gemini_response(prompt, channel_id):
                     return res_data['candidates'][0]['content']['parts'][0]['text']
         except Exception:
             continue
-
     return None
 
 @bot.event
 async def on_ready():
     print(f'------------------------------------')
-    print(f'カレン完全版（オタクに優しい妹）起動！')
+    print(f'カレン完全版（指示切り替え対応・制限対策済み）起動！')
     print(f'------------------------------------')
 
 @bot.event
@@ -202,9 +203,11 @@ async def on_message(message):
             
             user_status = "この相手はルール1にある『お兄様と指定された相手』です。" if has_permission else "この相手はルール3にある『それ以外の相手』です。"
 
+            # ★ここを変更！指示に応じて話しかける相手を変えるロジックを追加
             prompt = (
                 f"会話履歴:\n{history_text}\n\n"
-                f"【指示】履歴にある「自分の過去の発言」の流れも踏まえて、妹のカレンとして「{message.author.display_name}」にお返事して。\n"
+                f"【指示】履歴にある「自分の過去の発言」の流れも踏まえて、妹のカレンとしてお返事して。\n"
+                f"基本的には「{message.author.display_name}」への返信だけど、もし「〇〇に話しかけて」と指示された場合は、その指示に従って対象の相手に話しかけて。\n"
                 f"質問内容が最新情報に関わる場合は、提供された検索ツールを使って調べてから答えて。\n"
                 f"**重要：{user_status}**"
             )
@@ -271,4 +274,3 @@ async def 要約(ctx, limit: int = 30):
 
 keep_alive()
 bot.run(DISCORD_TOKEN)
-
