@@ -42,6 +42,7 @@ MODEL_CANDIDATES = [
     "gemini-2.5-pro",
     "gemini-3-flash-preview",
     "gemini-2.5-flash"
+    "gemini-2.5-flash-lite"
 ]
 
 intents = discord.Intents.default()
@@ -270,3 +271,4 @@ async def 要約(ctx, limit: int = 30):
 
 keep_alive()
 bot.run(DISCORD_TOKEN)
+
