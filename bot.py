@@ -30,7 +30,7 @@ NIKKE_CHANNEL_ID = 1255505687807524928
 ALLOWED_CHANNELS = [NIKKE_CHANNEL_ID, 1251376400775254149, 1268434232028430348]
 
 # --- モデル設定 ---
-CHAT_MODELS = ["gemini-2.5-flash-lite", "gemini-2.5-flash", "gemini-3-flash-preview"]
+CHAT_MODELS = ["gemini-2.5-flash-lite", "gemini-2.5-flash", "gemini-3-flash-preview", "gemini-2.5-pro", "gemini-3-pro-preview"]
 SUMMARY_MODELS = ["gemini-2.5-pro", "gemini-3-pro-preview"]
 
 intents = discord.Intents.default()
@@ -110,7 +110,7 @@ async def on_message(message):
 
     has_role = any(r.name == "カレンのお兄様" for r in message.author.roles)
     is_mentioned = bot.user.mentioned_in(message)
-    if not ((has_role and is_mentioned) or random.random() < 0.1): return
+    if not ((has_role and is_mentioned) or random.random() < 0.07): return
     
     if time.time() - last_reply_time.get(cid, 0) < 15: return
     last_reply_time[cid] = time.time()
@@ -186,4 +186,5 @@ async def 要約(ctx, limit: int = 30):
 
 keep_alive()
 bot.run(DISCORD_TOKEN)
+
 
