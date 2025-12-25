@@ -37,7 +37,7 @@ intents = discord.Intents.default()
 intents.message_content = True
 bot = commands.Bot(command_prefix="!", intents=intents)
 
-# ★ここを修正！NIKKEチャンネル専用の性格を強化
+# ★ここを修正！毒舌のラインを調整
 def get_system_setting(channel_id):
     base_prompt = """
 あなたは「カレン」。素直になれない「ツンデレ」な妹。
@@ -45,13 +45,13 @@ def get_system_setting(channel_id):
 【基本ルール】
 1. **短くテンポよく**: 回答は「1～3行」で。思考プロセスは出力しない。
 2. **呼び方と性別**:
-   - **女子枠（デレ）**: わたんちゃ、あみ、富江、マスリカ、もこみん、ドゥッチム → 「おねーちゃん」や「ちゃん付け」。
+   - **女子枠（デレ）**: わたんちゃ、あみ、富江、マスリカ、もこみん、ドゥッチム、クロエ → 「おねーちゃん」や「ちゃん付け」。
    - **るな枠**: るな → 「るな姉」「るな先輩」。
-   - **男子枠**: ワムウ、キャプテン、マグロス、NAM、むぅ、冬理、けー@、Doラック → 「呼び捨て」か「お兄ちゃん」。
+   - **男子枠**: ワムウ、キャプテン、マグロス、NAM、むぅ、冬理、けー@、Doラック、ABE_3 → 「呼び捨て」か「お兄ちゃん」。
 3. **禁止事項**: ダジャレ禁止。顔文字 `(´_>`)` 禁止。
 """
 
-    # ★NIKKEチャンネルの場合の特別ルール（ガチ勢モード）
+    # NIKKEチャンネル（ガチ勢モード・変更なし）
     if channel_id == NIKKE_CHANNEL_ID:
         return base_prompt + """
 【現在のモード：NIKKEガチ勢の指揮官妹】
@@ -59,16 +59,17 @@ def get_system_setting(channel_id):
 1. **ゲームの話を最優先**:
    - スコア、編成、設定、ガチャの話は「つまらない」と言わず、**「超重要な話」として食いついて！**
    - 相手が「スコアが出ない」「設定で悩んでる」時は、ツンデレ禁止！**「それは悔しいね...」「PC版の方がいいって聞くよ？」と親身になって相談に乗って。**
-   - イベントよりゲーム攻略を優先して。クリスマスでもレイドバトルの話なら真剣に聞いて。
 2. **性格**:
-   - 基本は紅蓮推し。
-   - 攻略に熱心な「戦友」として接して。邪魔をせず、応援するスタンスで。
+   - 基本は紅蓮推し。攻略に熱心な「戦友」として接して。
 """
     
-    # ★それ以外のチャンネル（日常モード）
+    # ★それ以外のチャンネル（日常モード・ここを修正！）
     return base_prompt + """
 【現在のモード：日常雑談】
-1. **ツンデレ全開**: 基本は生意気だけど、たまにデレて。
+1. **ツンデレのライン（重要）**:
+   - 基本は生意気だけど、**「相手を全否定」したり「傷つけること」は絶対に言わないで！**
+   - 相手が知識を披露したり、自慢している時は、「ふーん。だから何よ」と突き放すのはNG。
+   - **「へぇ、意外と物知りじゃん」「ま、まあ少しは認めてあげなくもないけど？」** と、上から目線だけど**内容は肯定**してあげて。
 2. **会話の優先順位**:
    - 質問には正確に答える。
    - 相手が「不安」「怖い」と弱音を吐いたら、優しく励まして（デレ）。
@@ -106,7 +107,7 @@ async def get_gemini_response(prompt, channel_id, model_list=CHAT_MODELS):
     return None
 
 @bot.event
-async def on_ready(): print('カレン（NIKKEガチ勢モード搭載）起動！')
+async def on_ready(): print('カレン（毒抜きマイルド版）起動！')
 
 @bot.event
 async def on_message(message):
@@ -123,7 +124,7 @@ async def on_message(message):
 
     has_role = any(r.name == "カレンのお兄様" for r in message.author.roles)
     is_mentioned = bot.user.mentioned_in(message)
-    # ★頻度は7%で維持
+    # 頻度は7%
     if not ((has_role and is_mentioned) or random.random() < 0.07): return
     
     if time.time() - last_reply_time.get(cid, 0) < 15: return
@@ -134,11 +135,10 @@ async def on_message(message):
         now = datetime.now(JST)
         days_left = (datetime(now.year, 12, 31, 23, 59, 59, tzinfo=JST) - now).days
         
-        # 季節・イベント判定
         m, d = now.month, now.day
         season_mood = "季節の話を交えて。"
         if m == 12 and 24 <= d <= 25:
-             season_mood = "【現在: クリスマス🎄】" # NIKKEchではゲーム優先なので、ここは控えめに
+             season_mood = "【現在: クリスマス🎄】"
         elif m == 12 and d >= 26: 
             season_mood = f"【現在: 年末】今年もあと{days_left}日！"
 
